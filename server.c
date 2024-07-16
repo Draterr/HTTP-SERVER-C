@@ -12,22 +12,28 @@
 #include <unistd.h>
 
 char *construct_response(int status,char *buf,int con_len,char *con_type,char *con){
-	char *final_response;
-	int snprintf_len = 0;
+	ulong snprintf_len = 0;
 	snprintf_len += strlen("HTTP/1.1 200 OK\r\n");
-	snprintf_len += strlen("Content-Type: %s\r\n");
-	snprintf_len += strlen("Content-Length: %d\r\n");
+	snprintf_len += strlen("Content-Type: \r\n") + strlen(con_type);
+	snprintf_len += strlen("Content-Length: \r\n") + sizeof(int);
 	snprintf_len += strlen("\r\n");
-	snprintf_len += strlen(con);
+	if(con != NULL){snprintf_len += strlen(con);}
 	//Todo: find the reason why the strlen(final_response) is different from our calculation
-	snprintf(final_response, snprintf_len,"HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %d\r\n\r\n%s",con_type,con_len,con);
-	printf("%s\n",final_response);
-	printf("1: %lu 2: %d\n",strlen(final_response),snprintf_len);
-	if(status == 200){
-		return buf;
+	//Todo: something is wrong here !@!@!@
+	if(con == NULL && status == 200){
+		strcpy(buf, "HTTP/1.1 200 OK\r\n\r\n");
 	}
 	else if(status == 404) {
 		strcpy(buf,"HTTP/1.1 404 Not Found\r\n\r\n");
+		return buf;
+	}
+	else{
+		//snprintf needs n+1 size to include null terminator
+		snprintf(buf, snprintf_len,"HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %d\r\n\r\n%s",con_type,con_len,con);
+	}
+	printf("con_len: %lu\n",strlen(con));
+	printf("1: %lu 2: %lu\n",strlen(buf),snprintf_len);
+	if(status == 200){
 		return buf;
 	}
 	return buf;
@@ -128,7 +134,7 @@ int main(int argc, char** argv){
 		printf("Connection received from %s %s\n",hbuf,hserv);
 		header_size = 2048;
 		header = malloc(header_size);
-		response = malloc(1024);
+		response = malloc(2048);
 		tmp = malloc(512);
 		memset(header, 0, header_size);
 		memset(tmp, 0, 512);
@@ -177,13 +183,20 @@ int main(int argc, char** argv){
 		printf("%s\n",path);
 		printf("%s\n",version);
 		char reply[1024];
-		if(strcmp(request,"/echo/")){
+		char *value;
+		bool echo = false;
+		if(strstr(path,"/echo/") != NULL){
 			strtok(path, "/");
-			strcpy(reply,strtok(NULL, "/"));
+			value = strtok(NULL, "/");
+			if(value != NULL){
+				strcpy(reply, value);
+			}
+			echo = true;
 		}
-		construct_response(200, response,strlen(reply),"text/plain",reply);
-		if(access(strcat(cwd,path), F_OK) == 0){
+		printf("value: %s\n",reply);
+		if(echo){
 			construct_response(200, response,strlen(reply),"text/plain",reply);
+			printf("response: %s\n",response);
 			int send_client = send(accept_client,response,strlen(response),0);
 			if(send_client == -1){
 				perror("send");
@@ -191,13 +204,30 @@ int main(int argc, char** argv){
 			}
 		}
 		else{
-			// construct_response(404, response);
+			construct_response(404, response,0,"text/plain",NULL);
+			printf("response: %s\n",response);
 			int send_client = send(accept_client,response,strlen(response),0);
 			if(send_client == -1){
 				perror("send");
 				exit(-1);
 			}
 		}
+		// if(access(strcat(cwd,path), F_OK) == 0){
+		// 		construct_response(200, response,strlen(reply),"text/plain",NULL);
+		// 		int send_client = send(accept_client,response,strlen(response),0);
+		// 		if(send_client == -1){
+		// 			perror("send");
+		// 			exit(-1);
+		// 		}
+		// }
+		// else{
+		// 	construct_response(404, response,strlen(reply),"text/plain",NULL);
+		// 	int send_client = send(accept_client,response,strlen(response),0);
+		// 	if(send_client == -1){
+		// 		perror("send");
+		// 		exit(-1);
+		// 	}
+		// }
 		free(path);
 		// while(request != NULL){
 		// 	printf("%s\n",request);
