@@ -11,66 +11,28 @@
 #include <stdbool.h>
 #include <unistd.h>
 
-char *construct_response(int status,char *buf,int con_len,char *con_type,char *con){
-	if(con == NULL && status == 200){
-		strcpy(buf, "HTTP/1.1 200 OK\r\n\r\n");
-		return buf;
-	}
-	else if(status == 404) {
-		strcpy(buf,"HTTP/1.1 404 Not Found\r\n\r\n");
-		return buf;
-	}
-	ulong snprintf_len = 0;
-	snprintf_len += strlen("HTTP/1.1 200 OK\r\n");
-	snprintf_len += strlen("Content-Type: \r\n") + strlen(con_type);
-	snprintf_len += strlen("Content-Length: \r\n") + sizeof(int);
-	snprintf_len += strlen("\r\n");
+//*******************************************************************************************************************
+//*                                    FUNCTION DEFINITION							    *
+//*******************************************************************************************************************
+char *construct_response(int status,char *buf,int con_len,char *con_type,char *con);
+char *extract_user_agent(char *header,char *buf);
+char *extract_echo_string(char *path,char *buf);
+bool end_of_header(char *buf);
+char *extract_header(int incoming_sockfd);
+#define min(a, b) ({ \
+    typeof(a) _a = (a); \
+    typeof(b) _b = (b); \
+    _a < _b ? _a : _b; \
+    })
+//global variables
+bool main_break = false;
 
-	if(con != NULL){snprintf_len += strlen(con);}
-
-	//snprintf needs n+1 size to include null terminator
-	snprintf(buf, snprintf_len,"HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %d\r\n\r\n%s",con_type,con_len,con);
-	if(status == 200){
-		return buf;
-	}
-	return buf;
-}
-
-char *extract_user_agent(char *header,char *buf){
-	char *pUser_agent;
-	pUser_agent = strstr(header, "User-Agent");
-	if(pUser_agent != NULL){
-		strtok(pUser_agent, " ");
-		strcpy(buf,strtok(NULL, "\r"));
-		return buf;
-	}
-	return NULL;
-}
-char *extract_echo_string(char *path,char *buf){
-	char *pEcho;
-	char *echo;
-	if(strncmp(path, "/echo/", 6) == 0){
-		strtok(path, "/");
-		echo = strtok(NULL, "/");
-		memcpy(buf, echo, strlen(echo));
-		return buf;
-	}
-	return NULL;
-}
-
-bool end_of_header(char *buf){
-	char *pmatch;
-	pmatch = strstr(buf,"\r\n\r\n");
-	if(pmatch != NULL){
-		return true;
-	}
-	return false;
-}
 int main(int argc, char** argv){
 	// if(argc < 3){
 	// 	printf("Usage: ./clone IP PORT\n");
 	// 	exit(1);
 	// }
+	
 	struct addrinfo hints;
 	struct addrinfo *servinfo;
 	struct addrinfo *p;
@@ -80,10 +42,7 @@ int main(int argc, char** argv){
 	char hbuf[NI_MAXHOST];
 	char hserv[NI_MAXSERV];
 	char *header;
-	char *tmp;
 	char *response;
-	uint current;
-	uint header_size = 2048;
 	char method[8];
 	bool end_header;
 
@@ -151,53 +110,34 @@ int main(int argc, char** argv){
 		};
 		
 		printf("Connection received from %s %s\n",hbuf,hserv);
-		header_size = 2048;
-		header = malloc(header_size);
-		response = malloc(2048);
-		tmp = malloc(512);
-		memset(header, 0, header_size);
-		memset(tmp, 0, 512);
-
-		//read header
-		while(end_of_header(tmp) == false){
-			memset(tmp, 0, 512);
-			int recv_client = recv(accept_client,tmp,512,0);
-			if(recv_client == -1){
-				perror("receive");
-				exit(-1);
-			}
-			if(recv_client == 0){
-				break;
-			}
-			current = strlen(header);
-			if(current >= header_size){
-				header_size = header_size *2;
-				header = realloc(header, header_size);
-			}
-			strcat(header, tmp);
-			printf("%s\n",header);
+		header = extract_header(accept_client);
+		if(main_break){
+			free(header);
+			free(response);
+			printf("Connection Closed from %s %s\n",hbuf,hserv);
+			continue;
 		}
-		printf("end of header\n");
-		char request[100];
+		char request[2048];
 		char *pstrtok;
 		char *ptok;
 		char *path;
 		char version[10];
-		char tmp_header[header_size];
-		memcpy(tmp_header, header, header_size);
-		memset(method, 0, 8);
-		memset(version, 0, 10);
-		memset(request, 0, 100);
-		path = malloc(1024);
-		memset(path, 0, 1024);
-		pstrtok = strtok(tmp_header, "\r\n");
-		memcpy(request, pstrtok, strlen(pstrtok));
-		ptok = strtok(request, " ");
-		strncpy(method, ptok,strlen(ptok));
-		ptok = strtok(NULL, " ");
-		strncpy(path, ptok,strlen(ptok));
-		ptok = strtok(NULL, "\r\n");
-		strncpy(version, ptok,strlen(ptok));
+		char tmp_header[strlen(header)];
+		if(strlen(header) != 0){
+			memset(tmp_header, 0, strlen(header));
+			memcpy(tmp_header, header, strlen(header));
+			printf("tmp header: %s\n",tmp_header);
+			path = malloc(2048);
+			memset(path, 0, 2048);
+			pstrtok = strtok(tmp_header, "\r\n");
+			memcpy(request, pstrtok, 2048);
+			ptok = strtok(request, " ");
+			strncpy(method, ptok,min(8,strlen(ptok)));
+			ptok = strtok(NULL, " ");
+			strncpy(path, ptok,2048);
+			ptok = strtok(NULL, "\r\n");
+			strncpy(version, ptok,min(10,strlen(ptok)));
+		}
 
 		char cwd[1024];
 		if(getcwd(cwd, sizeof(cwd)) == NULL){
@@ -210,11 +150,13 @@ int main(int argc, char** argv){
 		char user_agent[1024];
 		char echo_string[1024];
 		memset(reply,0, 1024);
+		memset(echo_string,0, 1024);
+		memset(user_agent,0, 1024);
 		bool echo = false;
 		if(extract_echo_string(path, echo_string) != NULL){
 			echo = true;
 			if(strlen(reply) != 0){
-				strcat(reply, echo_string);
+				strncat(reply, echo_string,strlen(echo_string));
 			}
 			else{
 				strncpy(reply, echo_string,strlen(echo_string));
@@ -223,12 +165,13 @@ int main(int argc, char** argv){
 		if(extract_user_agent(header, user_agent) != NULL){
 			echo = true;	
 			if(strlen(reply) != 0){
-				strcat(reply, user_agent);
+				strncat(reply, user_agent,strlen(user_agent));
 			}
 			else{
 				strncpy(reply, user_agent,strlen(user_agent));
 			}
 		}
+		response = malloc(2048);
 		if(echo){
 			construct_response(200, response,strlen(reply),"text/plain",reply);
 			printf("response: %s\n",response);
@@ -239,7 +182,7 @@ int main(int argc, char** argv){
 			}
 		}
 		else{
-			if(access(strcat(cwd,path), F_OK) == 0){
+			if(access(strncat(cwd,path,strlen(path)), F_OK) == 0){
 					construct_response(200, response,0,"text/plain",NULL);
 					int send_client = send(accept_client,response,strlen(response),0);
 					if(send_client == -1){
@@ -257,11 +200,111 @@ int main(int argc, char** argv){
 			}
 		}
 		free(path);
-		free(tmp);
 		free(response);
 		free(header);
 		close(accept_client);
 	}
 	close(sockfd);
 	return 0;
+}
+
+
+
+char *construct_response(int status,char *buf,int con_len,char *con_type,char *con){
+	if(con == NULL && status == 200){
+		strcpy(buf, "HTTP/1.1 200 OK\r\n\r\n");
+		return buf;
+	}
+	else if(status == 404) {
+		strcpy(buf,"HTTP/1.1 404 Not Found\r\n\r\n");
+		return buf;
+	}
+	ulong snprintf_len = 0;
+	snprintf_len += strlen("HTTP/1.1 200 OK\r\n");
+	snprintf_len += strlen("Content-Type: \r\n") + strlen(con_type);
+	snprintf_len += strlen("Content-Length: \r\n") + sizeof(int);
+	snprintf_len += strlen("\r\n");
+
+	if(con != NULL){snprintf_len += strlen(con);}
+
+	//snprintf needs n+1 size to include null terminator
+	snprintf(buf, snprintf_len,"HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %d\r\n\r\n%s",con_type,con_len,con);
+	if(status == 200){
+		return buf;
+	}
+	return buf;
+}
+
+char *extract_user_agent(char *header,char *buf){
+	char *pUser_agent;
+	pUser_agent = strstr(header, "User-Agent");
+	if(pUser_agent != NULL){
+		strtok(pUser_agent, " ");
+		strcpy(buf,strtok(NULL, "\r"));
+		return buf;
+	}
+	return NULL;
+}
+
+char *extract_echo_string(char *path,char *buf){
+	char *pEcho;
+	char *echo;
+	if(strncmp(path, "/echo/", 6) == 0){
+		strtok(path, "/");
+		echo = strtok(NULL, "/");
+		memcpy(buf, echo, strlen(echo));
+		strcat(buf, "\r\n");
+		return buf;
+	}
+	return NULL;
+}
+
+bool end_of_header(char *buf){
+	char *pmatch;
+	pmatch = strstr(buf,"\r\n\r\n");
+	if(pmatch != NULL){
+		return true;
+	}
+	return false;
+}
+
+char *extract_header(int incoming_sockfd){
+		uint current = 0;
+		uint h_size = 2048;
+		char *tmp;
+		char *header;
+		char *new_ptr;
+		header = malloc(2048);
+		memset(header, 0, 2048);
+		tmp = malloc(512);
+		memset(tmp, 0, 512);
+		while(end_of_header(tmp) == false){
+			memset(tmp, 0, 512);
+			int recv_client = recv(incoming_sockfd,tmp,512,0);
+			if(recv_client == -1){
+				perror("receive");
+				exit(-1);
+			}
+			if(recv_client == 0){
+				main_break = true;
+				break;
+			}
+			current += strlen(tmp);
+			if(current >= h_size){
+				h_size = h_size * 2;
+				new_ptr = realloc(header, h_size);
+				if(new_ptr != NULL){
+					header = new_ptr;
+				}
+				else{
+					perror("realloc");
+					exit(-1);
+				}
+			}
+			strncat(header, tmp,strlen(tmp));
+			printf("h_size = %u memory used = %u\n",h_size, current);
+		}
+		free(tmp);
+		printf("end of header\n");
+		return header;
 }
