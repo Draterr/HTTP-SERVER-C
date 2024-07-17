@@ -12,31 +12,50 @@
 #include <unistd.h>
 
 char *construct_response(int status,char *buf,int con_len,char *con_type,char *con){
-	ulong snprintf_len = 0;
-	snprintf_len += strlen("HTTP/1.1 200 OK\r\n");
-	snprintf_len += strlen("Content-Type: \r\n") + strlen(con_type);
-	snprintf_len += strlen("Content-Length: \r\n") + sizeof(int);
-	snprintf_len += strlen("\r\n");
-	if(con != NULL){snprintf_len += strlen(con);}
-	//Todo: find the reason why the strlen(final_response) is different from our calculation
-	//Todo: something is wrong here !@!@!@
 	if(con == NULL && status == 200){
 		strcpy(buf, "HTTP/1.1 200 OK\r\n\r\n");
+		return buf;
 	}
 	else if(status == 404) {
 		strcpy(buf,"HTTP/1.1 404 Not Found\r\n\r\n");
 		return buf;
 	}
-	else{
-		//snprintf needs n+1 size to include null terminator
-		snprintf(buf, snprintf_len,"HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %d\r\n\r\n%s",con_type,con_len,con);
-	}
-	printf("con_len: %lu\n",strlen(con));
-	printf("1: %lu 2: %lu\n",strlen(buf),snprintf_len);
+	ulong snprintf_len = 0;
+	snprintf_len += strlen("HTTP/1.1 200 OK\r\n");
+	snprintf_len += strlen("Content-Type: \r\n") + strlen(con_type);
+	snprintf_len += strlen("Content-Length: \r\n") + sizeof(int);
+	snprintf_len += strlen("\r\n");
+
+	if(con != NULL){snprintf_len += strlen(con);}
+
+	//snprintf needs n+1 size to include null terminator
+	snprintf(buf, snprintf_len,"HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %d\r\n\r\n%s",con_type,con_len,con);
 	if(status == 200){
 		return buf;
 	}
 	return buf;
+}
+
+char *extract_user_agent(char *header,char *buf){
+	char *pUser_agent;
+	pUser_agent = strstr(header, "User-Agent");
+	if(pUser_agent != NULL){
+		strtok(pUser_agent, " ");
+		strcpy(buf,strtok(NULL, "\r"));
+		return buf;
+	}
+	return NULL;
+}
+char *extract_echo_string(char *path,char *buf){
+	char *pEcho;
+	char *echo;
+	if(strncmp(path, "/echo/", 6) == 0){
+		strtok(path, "/");
+		echo = strtok(NULL, "/");
+		memcpy(buf, echo, strlen(echo));
+		return buf;
+	}
+	return NULL;
 }
 
 bool end_of_header(char *buf){
@@ -138,6 +157,8 @@ int main(int argc, char** argv){
 		tmp = malloc(512);
 		memset(header, 0, header_size);
 		memset(tmp, 0, 512);
+
+		//read header
 		while(end_of_header(tmp) == false){
 			memset(tmp, 0, 512);
 			int recv_client = recv(accept_client,tmp,512,0);
@@ -156,24 +177,27 @@ int main(int argc, char** argv){
 			strcat(header, tmp);
 			printf("%s\n",header);
 		}
+		printf("end of header\n");
 		char request[100];
 		char *pstrtok;
 		char *ptok;
 		char *path;
 		char version[10];
+		char tmp_header[header_size];
+		memcpy(tmp_header, header, header_size);
 		memset(method, 0, 8);
 		memset(version, 0, 10);
 		memset(request, 0, 100);
 		path = malloc(1024);
 		memset(path, 0, 1024);
-		pstrtok = strtok(header, "\r\n");
+		pstrtok = strtok(tmp_header, "\r\n");
 		memcpy(request, pstrtok, strlen(pstrtok));
 		ptok = strtok(request, " ");
-		strcpy(method, ptok);
+		strncpy(method, ptok,strlen(ptok));
 		ptok = strtok(NULL, " ");
-		strcpy(path, ptok);
+		strncpy(path, ptok,strlen(ptok));
 		ptok = strtok(NULL, "\r\n");
-		strcpy(version, ptok);
+		strncpy(version, ptok,strlen(ptok));
 
 		char cwd[1024];
 		if(getcwd(cwd, sizeof(cwd)) == NULL){
@@ -183,17 +207,28 @@ int main(int argc, char** argv){
 		printf("%s\n",path);
 		printf("%s\n",version);
 		char reply[1024];
-		char *value;
+		char user_agent[1024];
+		char echo_string[1024];
+		memset(reply,0, 1024);
 		bool echo = false;
-		if(strstr(path,"/echo/") != NULL){
-			strtok(path, "/");
-			value = strtok(NULL, "/");
-			if(value != NULL){
-				strcpy(reply, value);
-			}
+		if(extract_echo_string(path, echo_string) != NULL){
 			echo = true;
+			if(strlen(reply) != 0){
+				strcat(reply, echo_string);
+			}
+			else{
+				strncpy(reply, echo_string,strlen(echo_string));
+			}
 		}
-		printf("value: %s\n",reply);
+		if(extract_user_agent(header, user_agent) != NULL){
+			echo = true;	
+			if(strlen(reply) != 0){
+				strcat(reply, user_agent);
+			}
+			else{
+				strncpy(reply, user_agent,strlen(user_agent));
+			}
+		}
 		if(echo){
 			construct_response(200, response,strlen(reply),"text/plain",reply);
 			printf("response: %s\n",response);
@@ -204,47 +239,24 @@ int main(int argc, char** argv){
 			}
 		}
 		else{
-			construct_response(404, response,0,"text/plain",NULL);
-			printf("response: %s\n",response);
-			int send_client = send(accept_client,response,strlen(response),0);
-			if(send_client == -1){
-				perror("send");
-				exit(-1);
+			if(access(strcat(cwd,path), F_OK) == 0){
+					construct_response(200, response,0,"text/plain",NULL);
+					int send_client = send(accept_client,response,strlen(response),0);
+					if(send_client == -1){
+						perror("send");
+						exit(-1);
+					}
+			}
+			else{
+				construct_response(404, response,0,"text/plain",NULL);
+				int send_client = send(accept_client,response,strlen(response),0);
+				if(send_client == -1){
+					perror("send");
+					exit(-1);
+				}
 			}
 		}
-		// if(access(strcat(cwd,path), F_OK) == 0){
-		// 		construct_response(200, response,strlen(reply),"text/plain",NULL);
-		// 		int send_client = send(accept_client,response,strlen(response),0);
-		// 		if(send_client == -1){
-		// 			perror("send");
-		// 			exit(-1);
-		// 		}
-		// }
-		// else{
-		// 	construct_response(404, response,strlen(reply),"text/plain",NULL);
-		// 	int send_client = send(accept_client,response,strlen(response),0);
-		// 	if(send_client == -1){
-		// 		perror("send");
-		// 		exit(-1);
-		// 	}
-		// }
 		free(path);
-		// while(request != NULL){
-		// 	printf("%s\n",request);
-		// 	request = strtok(NULL, "\r\n");
-		// }
-		// printf("method: %s\n",method);
-		printf("end of header\n");
-		// memcpy(method, header, 4);
-		// parse_method(method);
-		// construct_response(200, response);
-		// int send_response = send(accept_client,reply,1024,0);
-		// if(send_response == -1){
-		// 	perror("send");
-		// 	exit(-1);
-		// }
-		// memset(header, 0, 1024);
-		// free(response);
 		free(tmp);
 		free(response);
 		free(header);
