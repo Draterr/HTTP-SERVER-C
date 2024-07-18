@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <getopt.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <stdlib.h>
@@ -17,13 +18,17 @@
 char *construct_response(int status,char *buf,int con_len,char *con_type,char *con);
 char *extract_user_agent(char *header,char *buf);
 char *extract_echo_string(char *path,char *buf);
+char *extract_file_name(char *path,char *buf);
 bool end_of_header(char *buf);
 char *extract_header(int incoming_sockfd);
+char *get_arguments(int argc, char **argv);
+
 #define min(a, b) ({ \
     typeof(a) _a = (a); \
     typeof(b) _b = (b); \
     _a < _b ? _a : _b; \
     })
+
 //global variables
 bool main_break = false;
 
@@ -32,7 +37,11 @@ int main(int argc, char** argv){
 	// 	printf("Usage: ./clone IP PORT\n");
 	// 	exit(1);
 	// }
-	
+	//
+	char directory[4096];
+	snprintf(directory, 4096, "%s", get_arguments(argc, argv));
+	printf("%s\n",directory);
+	printf("%lu\n",strlen(directory));
 	struct addrinfo hints;
 	struct addrinfo *servinfo;
 	struct addrinfo *p;
@@ -44,6 +53,8 @@ int main(int argc, char** argv){
 	char *header;
 	char *response;
 	char method[8];
+	int cnt;
+	pid_t childpid;
 	bool end_header;
 
 	memset(&hints, 0, sizeof(struct addrinfo));
@@ -110,99 +121,113 @@ int main(int argc, char** argv){
 		};
 		
 		printf("Connection received from %s %s\n",hbuf,hserv);
-		header = extract_header(accept_client);
-		if(main_break){
-			free(header);
-			free(response);
-			printf("Connection Closed from %s %s\n",hbuf,hserv);
-			continue;
-		}
-		char request[2048];
-		char *pstrtok;
-		char *ptok;
-		char *path;
-		char version[10];
-		char tmp_header[strlen(header)];
-		if(strlen(header) != 0){
-			memset(tmp_header, 0, strlen(header));
-			memcpy(tmp_header, header, strlen(header));
-			printf("tmp header: %s\n",tmp_header);
-			path = malloc(2048);
-			memset(path, 0, 2048);
-			pstrtok = strtok(tmp_header, "\r\n");
-			memcpy(request, pstrtok, 2048);
-			ptok = strtok(request, " ");
-			strncpy(method, ptok,min(8,strlen(ptok)));
-			ptok = strtok(NULL, " ");
-			strncpy(path, ptok,2048);
-			ptok = strtok(NULL, "\r\n");
-			strncpy(version, ptok,min(10,strlen(ptok)));
-		}
+		printf("Clients Connected: %d\n",++cnt);
 
-		char cwd[1024];
-		if(getcwd(cwd, sizeof(cwd)) == NULL){
-			perror("getcwd");
+		//fork() returns twice 
+		//1. the child process pid
+		//2. returns 0 if its code that the child process should be running
+		childpid = fork();
+		if(childpid == -1){
+			perror("fork");
+			exit(-1);
 		}
-		printf("%s\n",request);
-		printf("%s\n",path);
-		printf("%s\n",version);
-		char reply[1024];
-		char user_agent[1024];
-		char echo_string[1024];
-		memset(reply,0, 1024);
-		memset(echo_string,0, 1024);
-		memset(user_agent,0, 1024);
-		bool echo = false;
-		if(extract_echo_string(path, echo_string) != NULL){
-			echo = true;
-			if(strlen(reply) != 0){
-				strncat(reply, echo_string,strlen(echo_string));
+		if(childpid == 0){
+			header = extract_header(accept_client);
+			if(main_break){
+				free(header);
+				free(response);
+				printf("Connection Closed from %s %s\n",hbuf,hserv);
+				continue;
 			}
-			else{
-				strncpy(reply, echo_string,strlen(echo_string));
+			char request[2048];
+			char *pstrtok;
+			char *ptok;
+			char *path;
+			char version[10];
+			char tmp_header[strlen(header)];
+			if(strlen(header) != 0){
+				memset(tmp_header, 0, strlen(header));
+				memcpy(tmp_header, header, strlen(header));
+				printf("tmp header: %s\n",tmp_header);
+				path = malloc(2048);
+				memset(path, 0, 2048);
+				pstrtok = strtok(tmp_header, "\r\n");
+				memcpy(request, pstrtok, 2048);
+				ptok = strtok(request, " ");
+				strncpy(method, ptok,min(8,strlen(ptok)));
+				ptok = strtok(NULL, " ");
+				strncpy(path, ptok,2048);
+				ptok = strtok(NULL, "\r\n");
+				strncpy(version, ptok,min(10,strlen(ptok)));
 			}
-		}
-		if(extract_user_agent(header, user_agent) != NULL){
-			echo = true;	
-			if(strlen(reply) != 0){
-				strncat(reply, user_agent,strlen(user_agent));
+
+			char cwd[1024];
+			if(getcwd(cwd, sizeof(cwd)) == NULL){
+				perror("getcwd");
 			}
-			else{
-				strncpy(reply, user_agent,strlen(user_agent));
-			}
-		}
-		response = malloc(2048);
-		if(echo){
-			construct_response(200, response,strlen(reply),"text/plain",reply);
-			printf("response: %s\n",response);
-			int send_client = send(accept_client,response,strlen(response),0);
-			if(send_client == -1){
-				perror("send");
-				exit(-1);
-			}
-		}
-		else{
-			if(access(strncat(cwd,path,strlen(path)), F_OK) == 0){
-					construct_response(200, response,0,"text/plain",NULL);
+			printf("%s\n",request);
+			printf("%s\n",path);
+			printf("%s\n",version);
+			char reply[1024];
+			char user_agent[1024];
+			char file_name[1024];
+			char echo_string[1024];
+			memset(reply,0, 1024);
+			memset(echo_string,0, 1024);
+			memset(user_agent,0, 1024);
+			bool echo = false;
+			if(extract_file_name(path,file_name) != NULL){
+				if(access(strncat(cwd,file_name,strlen(file_name)), F_OK) == 0){
+						construct_response(200, response,0,"text/plain",NULL);
+						int send_client = send(accept_client,response,strlen(response),0);
+						if(send_client == -1){
+							perror("send");
+							exit(-1);
+						}
+				}
+				else{
+					construct_response(404, response,0,"text/plain",NULL);
 					int send_client = send(accept_client,response,strlen(response),0);
 					if(send_client == -1){
 						perror("send");
 						exit(-1);
 					}
+				}
 			}
-			else{
-				construct_response(404, response,0,"text/plain",NULL);
+			if(extract_echo_string(path, echo_string) != NULL){
+				// printf("%lu\n",strlen(echo_string));
+				echo = true;
+				if(strlen(reply) != 0){
+					strncat(reply, echo_string,strlen(echo_string));
+				}
+				else{
+					strncpy(reply, echo_string,strlen(echo_string));
+				}
+			}
+			if(extract_user_agent(header, user_agent) != NULL){
+				echo = true;	
+				if(strlen(reply) != 0){
+					strncat(reply, user_agent,strlen(user_agent));
+				}
+				else{
+					strncpy(reply, user_agent,strlen(user_agent));
+				}
+			}
+			response = malloc(2048);
+			if(echo){
+				construct_response(200, response,strlen(reply),"text/plain",reply);
+				printf("response: %s\n",response);
 				int send_client = send(accept_client,response,strlen(response),0);
 				if(send_client == -1){
 					perror("send");
 					exit(-1);
 				}
 			}
-		}
-		free(path);
-		free(response);
-		free(header);
-		close(accept_client);
+			free(path);
+			free(response);
+			free(header);
+			close(accept_client);
+			}
 	}
 	close(sockfd);
 	return 0;
@@ -240,7 +265,7 @@ char *extract_user_agent(char *header,char *buf){
 	pUser_agent = strstr(header, "User-Agent");
 	if(pUser_agent != NULL){
 		strtok(pUser_agent, " ");
-		strcpy(buf,strtok(NULL, "\r"));
+		snprintf(buf,1024 , "%s", strtok(NULL, "\r"));
 		return buf;
 	}
 	return NULL;
@@ -253,7 +278,6 @@ char *extract_echo_string(char *path,char *buf){
 		strtok(path, "/");
 		echo = strtok(NULL, "/");
 		memcpy(buf, echo, strlen(echo));
-		strcat(buf, "\r\n");
 		return buf;
 	}
 	return NULL;
@@ -308,3 +332,30 @@ char *extract_header(int incoming_sockfd){
 		printf("end of header\n");
 		return header;
 }
+
+char *extract_file_name(char *path, char *buf){
+	char file_name[255];
+	if(strncmp(path, "/file/", 6) == 0){
+		strtok(path, "/");
+		snprintf(file_name, 255,"%s" , strtok(NULL, "/"));
+		strncpy(buf,file_name , strlen(file_name));
+		return buf;
+	}
+	else{
+		return NULL;
+	}
+}
+
+char *get_arguments(int argc,char **argv){
+	bool exist = false;
+	int option_index = 0;
+	static struct option long_options[] = {
+		{"directory", required_argument,NULL,true}
+	};
+	exist = getopt_long(argc,argv ,"",long_options, &option_index);
+	if(exist){
+		return optarg;
+	}
+	return NULL;
+}
+
