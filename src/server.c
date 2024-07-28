@@ -21,6 +21,8 @@
 char *construct_response(int status,char *buf,int con_len,char *con_type,char *con);
 char *get_arguments(int argc, char **argv);
 char *read_from_file(FILE *file,char *file_name);
+void remove_newline(char *word, int last_position);
+void free_mem_close_sock(char *path, char *header, char *response, char *reply, int socket);
 
 #define min(a, b) ({ \
     typeof(a) _a = (a); \
@@ -43,7 +45,6 @@ int main(int argc, char** argv){
 	if(optarg){
 		snprintf(directory, strlen(optarg)+1, "%s", optarg);
 	}
-	printf("%s\n",directory);
 	struct addrinfo hints;
 	struct addrinfo *servinfo;
 	struct addrinfo *p;
@@ -55,14 +56,16 @@ int main(int argc, char** argv){
 	char *header;
 	char *response;
 	char method[8];
-	int cnt;
+	int cnt = 0;
 	pid_t childpid;
 	bool end_header;
 
 	memset(&hints, 0, sizeof(struct addrinfo));
+	//AF_INET = IPV4
 	hints.ai_family = AF_INET;
-	hints.ai_socktype = AI_PASSIVE;
-	
+	//SOCK_STREAM = TCP(kinda)
+	hints.ai_socktype = SOCK_STREAM;
+
 	//populate addrinfo "ip,port,protocol,etc"
 
 	// int getinfo = getaddrinfo(argv[1],argv[2],&hints,&servinfo);
@@ -81,12 +84,14 @@ int main(int argc, char** argv){
 	//iterate over addrinfo linked list and print out the port and ip
 
 	for(p = servinfo; p != NULL; p = p->ai_next){
-		ipv4 = (struct sockaddr_in *)p->ai_addr;
-		char ip[INET_ADDRSTRLEN];
-		inet_ntop(p->ai_family,&(ipv4->sin_addr),ip,sizeof(ip));
-		printf("IP: %s\n",ip);
-		uint16_t port = ntohs(ipv4->sin_port);
-		printf("PORT: %d\n",port);
+		if(p->ai_family == AF_INET && p->ai_socktype == SOCK_STREAM){
+			ipv4 = (struct sockaddr_in *)p->ai_addr;
+			char ip[INET_ADDRSTRLEN];
+			inet_ntop(p->ai_family,&(ipv4->sin_addr),ip,sizeof(ip));
+			printf("IP: %s\n",ip);
+			uint16_t port = ntohs(ipv4->sin_port);
+			printf("PORT: %d\n",port);
+		}
 	}
 	//setsockopt allows us to reuse the same ip and port preventing the PORT ALREADY IN USE ERRORS
 	if(setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int)) == -1){
@@ -107,7 +112,6 @@ int main(int argc, char** argv){
 		perror("listen");
 		exit(-1);
 	}
-
 	freeaddrinfo(servinfo);
 	while(1){
 		//accept any incoming connections on the network socket (BLOCKING)
@@ -121,7 +125,7 @@ int main(int argc, char** argv){
 		if(getnameinfo((struct sockaddr *)&incoming, their_size, hbuf, sizeof(hbuf), hserv, sizeof(hserv),NI_NUMERICHOST |NI_NUMERICSERV) == -1){
 			perror("getnameinfo");
 		};
-		
+
 		printf("Connection received from %s %s\n",hbuf,hserv);
 		printf("Clients Connected: %d\n",++cnt);
 
@@ -145,12 +149,11 @@ int main(int argc, char** argv){
 			char *pstrtok;
 			char *ptok;
 			char *path;
-			char version[10];
-			char tmp_header[strlen(header)];
+			char version[10] = {0};
+			char tmp_header[strlen(header)+1];
 			if(strlen(header) != 0){
-				memset(tmp_header, 0, strlen(header));
-				memcpy(tmp_header, header, strlen(header));
-				printf("tmp header: %s\n",tmp_header);
+				memcpy(tmp_header, header, strlen(header)+1);
+				// printf("tmp header: %s\n",tmp_header);
 				path = malloc(2048);
 				memset(path, 0, 2048);
 				pstrtok = strtok(tmp_header, "\r\n");
@@ -166,7 +169,7 @@ int main(int argc, char** argv){
 			char cwd[4096];
 			DIR *d;
 			struct dirent *dir;
-			printf("%s\n",directory);
+			// printf("%s\n",directory);
 			if(strlen(directory) <= 0){
 				if(getcwd(cwd, sizeof(cwd)) == NULL){
 					perror("getcwd");
@@ -177,23 +180,24 @@ int main(int argc, char** argv){
 				if(d == NULL){
 					printf("Can't open directory\n");
 					exit(-1);
+					closedir(d);
 				}
 				else{
 					strncpy(cwd, directory, 4096);
+					closedir(d);
 				}
 			}
 			printf("%s\n",request);
 			printf("%s\n",path);
 			printf("%s\n",version);
-			char reply[1024];
-			char user_agent[1024];
-			char file_name[1024];
-			char echo_string[1024];
-			memset(reply,0, 1024);
-			memset(echo_string,0, 1024);
-			memset(user_agent,0, 1024);
+			char *reply;
+			char user_agent[1024] = {0};
+			char file_name[1024] = {0};
+			char echo_string[1024] = {0};
 			bool echo = false;
 			strcat(cwd, "/");
+			reply = malloc(1024);
+			memset(reply, 0, 1024);
 			if(extract_file_name(path,file_name) != NULL){
 				strncat(cwd,file_name,strlen(file_name));
 				if(access(cwd, F_OK) == 0){
@@ -202,22 +206,26 @@ int main(int argc, char** argv){
 						perror("fopen");
 					}
 						response = read_from_file(fptr, file_name);
-						printf("%s\n",response);
-						printf("%lu\n",strlen(response));
-						construct_response(200, response,0,"application/octet-stream",NULL);
-						int send_client = send(accept_client,response,strlen(response),0);
+						reply = realloc(reply, strlen(response) + 2048);
+						construct_response(200, reply,strlen(response),"application/octet-stream",response);
+						int send_client = send(accept_client,reply,strlen(reply),0);
 						if(send_client == -1){
 							perror("send");
 							exit(-1);
 						}
+					fclose(fptr);
+					free_mem_close_sock(path, header, response, reply, accept_client);
+					continue;
 				}
 				else{
-					construct_response(404, response,0,"text/plain",NULL);
-					int send_client = send(accept_client,response,strlen(response),0);
+					construct_response(404, reply,0,"text/plain",NULL);
+					int send_client = send(accept_client,reply,strlen(reply),0);
 					if(send_client == -1){
 						perror("send");
 						exit(-1);
 					}
+					free_mem_close_sock(path, header, response, reply, accept_client);
+					continue;
 				}
 			}
 			if(extract_echo_string(path, echo_string) != NULL){
@@ -247,11 +255,11 @@ int main(int argc, char** argv){
 					perror("send");
 					exit(-1);
 				}
+				free_mem_close_sock(path, header, response, reply, accept_client);
+				continue;
 			}
-			free(path);
-			free(response);
-			free(header);
-			close(accept_client);
+			free_mem_close_sock(path, header, response, reply, accept_client);
+			continue;
 			}
 	}
 	close(sockfd);
@@ -263,12 +271,10 @@ int main(int argc, char** argv){
 char *construct_response(int status,char *buf,int con_len,char *con_type,char *con){
 	if(con == NULL && status == 200){
 		strcpy(buf, "HTTP/1.1 200 OK\r\n\r\n");
-		printf("lllll\n");
 		return buf;
 	}
 	else if(con == NULL && status == 404) {
 		strcpy(buf,"HTTP/1.1 404 Not Found\r\n\r\n");
-		printf("wtf\n");
 		return buf;
 	}
 	ulong snprintf_len = 0;
@@ -350,32 +356,42 @@ char *read_from_file(FILE *fptr,char *file_name){
 	cur_mem = 2048;
 	positon = 0;
 	buf = malloc(2048);
-	if(!buf){
+	if(buf == NULL){
 		perror("malloc");
 		return NULL;
 	}
-	if(fptr != NULL){
-		while(fgets(tmp, 2048, fptr)){
-			if(feof(fptr)){
-				break;
-			}
-			memcpy(&buf[positon], tmp, strlen(tmp));
-			positon = positon + strlen(tmp);
-			cur_mem = cur_mem + strlen(tmp);
-			if(cur_mem < max_mem){
-				buf = realloc(buf, cur_mem);
-			}
-			else{
-				perror("max memory reached\n");
-				return buf;
-			}
+	while(fgets(tmp, 2048, fptr)){
+		if(feof(fptr)){
+			break;
 		}
-		buf = realloc(buf, strlen(buf)+1);
-		fseek(fptr, 0, SEEK_SET);
-		return buf;
-	}else{
-		perror("error opening file");
-		return NULL;
+		memcpy(&buf[positon], tmp, strlen(tmp));
+		positon +=  strlen(tmp);
+		cur_mem +=  strlen(tmp);
+		if(cur_mem < max_mem){
+			buf = realloc(buf, cur_mem);
+		}
+		else{
+			perror("max memory reached\n");
+			return buf;
+		}
+	}
+	buf = realloc(buf, positon + 1);
+	fseek(fptr, 0, SEEK_SET);
+	remove_newline(buf,positon);
+	return buf;
+}
+
+void remove_newline(char *word,int last_position){
+	int new_line_pos = last_position - 1;	
+	if(word[new_line_pos] == '\n'){
+		word[new_line_pos] = 0;
 	}
 }
 
+void free_mem_close_sock(char *path, char *header, char *response, char *reply, int socket){
+	free(path);
+	free(header);
+	free(reply);
+	free(response);
+	close(socket);
+}

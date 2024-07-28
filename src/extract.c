@@ -21,9 +21,9 @@ bool end_of_header(char *buf){
 
 char *extract_file_name(char *path, char *buf){
 	char file_name[255];
-	if(strncmp(path, "/file/", 6) == 0){
+	if(strncmp(path, "/files/", 7) == 0){
 		strtok(path, "/");
-		snprintf(file_name, 255,"%s" , strtok(NULL, "/"));
+		snprintf(file_name, 255,"%s" , strtok(NULL, "\0"));
 		strncpy(buf,file_name , strlen(file_name));
 		return buf;
 	}
