@@ -1,3 +1,4 @@
+#include <stdint.h>
 #include <stdio.h>
 #include <getopt.h>
 #include <sys/types.h>
@@ -19,6 +20,7 @@
 //*******************************************************************************************************************
 char *construct_response(int status,char *buf,int con_len,char *con_type,char *con);
 char *get_arguments(int argc, char **argv);
+char *read_from_file(FILE *file,char *file_name);
 
 #define min(a, b) ({ \
     typeof(a) _a = (a); \
@@ -36,9 +38,12 @@ int main(int argc, char** argv){
 	// }
 	//
 	char directory[4096];
-	snprintf(directory, 4096, "%s", get_arguments(argc, argv));
+	char *optarg;
+	optarg = get_arguments(argc, argv);
+	if(optarg){
+		snprintf(directory, strlen(optarg)+1, "%s", optarg);
+	}
 	printf("%s\n",directory);
-	printf("%lu\n",strlen(directory));
 	struct addrinfo hints;
 	struct addrinfo *servinfo;
 	struct addrinfo *p;
@@ -161,6 +166,7 @@ int main(int argc, char** argv){
 			char cwd[4096];
 			DIR *d;
 			struct dirent *dir;
+			printf("%s\n",directory);
 			if(strlen(directory) <= 0){
 				if(getcwd(cwd, sizeof(cwd)) == NULL){
 					perror("getcwd");
@@ -191,8 +197,14 @@ int main(int argc, char** argv){
 			if(extract_file_name(path,file_name) != NULL){
 				strncat(cwd,file_name,strlen(file_name));
 				if(access(cwd, F_OK) == 0){
-						printf("asdasdasdasd\n");
-						construct_response(200, response,0,"text/plain",NULL);
+						FILE *fptr = fopen(cwd, "r");					
+						if(fptr == NULL){
+						perror("fopen");
+					}
+						response = read_from_file(fptr, file_name);
+						printf("%s\n",response);
+						printf("%lu\n",strlen(response));
+						construct_response(200, response,0,"application/octet-stream",NULL);
 						int send_client = send(accept_client,response,strlen(response),0);
 						if(send_client == -1){
 							perror("send");
@@ -200,9 +212,7 @@ int main(int argc, char** argv){
 						}
 				}
 				else{
-					printf("tihissisi\n");
 					construct_response(404, response,0,"text/plain",NULL);
-					printf("%s\n",response);
 					int send_client = send(accept_client,response,strlen(response),0);
 					if(send_client == -1){
 						perror("send");
@@ -211,7 +221,6 @@ int main(int argc, char** argv){
 				}
 			}
 			if(extract_echo_string(path, echo_string) != NULL){
-				// printf("%lu\n",strlen(echo_string));
 				echo = true;
 				if(strlen(reply) != 0){
 					strncat(reply, echo_string,strlen(echo_string));
@@ -220,15 +229,15 @@ int main(int argc, char** argv){
 					strncpy(reply, echo_string,strlen(echo_string));
 				}
 			}
-			if(extract_user_agent(header, user_agent) != NULL){
-				echo = true;	
-				if(strlen(reply) != 0){
-					strncat(reply, user_agent,strlen(user_agent));
-				}
-				else{
-					strncpy(reply, user_agent,strlen(user_agent));
-				}
-			}
+			// if(extract_user_agent(header, user_agent) != NULL){
+			// 	echo = true;	
+			// 	if(strlen(reply) != 0){
+			// 		strncat(reply, user_agent,strlen(user_agent));
+			// 	}
+			// 	else{
+			// 		strncpy(reply, user_agent,strlen(user_agent));
+			// 	}
+			// }
 			response = malloc(2048);
 			if(echo){
 				construct_response(200, response,strlen(reply),"text/plain",reply);
@@ -252,7 +261,6 @@ int main(int argc, char** argv){
 
 
 char *construct_response(int status,char *buf,int con_len,char *con_type,char *con){
-	printf("ddddd\n");
 	if(con == NULL && status == 200){
 		strcpy(buf, "HTTP/1.1 200 OK\r\n\r\n");
 		printf("lllll\n");
@@ -263,7 +271,6 @@ char *construct_response(int status,char *buf,int con_len,char *con_type,char *c
 		printf("wtf\n");
 		return buf;
 	}
-	printf("idk\n");
 	ulong snprintf_len = 0;
 	snprintf_len += strlen("HTTP/1.1 200 OK\r\n");
 	snprintf_len += strlen("Content-Type: \r\n") + strlen(con_type);
@@ -332,5 +339,43 @@ char *get_arguments(int argc,char **argv){
 		return optarg;
 	}
 	return NULL;
+}
+
+char *read_from_file(FILE *fptr,char *file_name){
+	char *buf;
+	char tmp[2048];
+	size_t positon;
+	size_t cur_mem;
+	uint32_t max_mem = UINT32_MAX;
+	cur_mem = 2048;
+	positon = 0;
+	buf = malloc(2048);
+	if(!buf){
+		perror("malloc");
+		return NULL;
+	}
+	if(fptr != NULL){
+		while(fgets(tmp, 2048, fptr)){
+			if(feof(fptr)){
+				break;
+			}
+			memcpy(&buf[positon], tmp, strlen(tmp));
+			positon = positon + strlen(tmp);
+			cur_mem = cur_mem + strlen(tmp);
+			if(cur_mem < max_mem){
+				buf = realloc(buf, cur_mem);
+			}
+			else{
+				perror("max memory reached\n");
+				return buf;
+			}
+		}
+		buf = realloc(buf, strlen(buf)+1);
+		fseek(fptr, 0, SEEK_SET);
+		return buf;
+	}else{
+		perror("error opening file");
+		return NULL;
+	}
 }
 
