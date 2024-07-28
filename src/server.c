@@ -11,16 +11,13 @@
 #include <netdb.h>
 #include <stdbool.h>
 #include <unistd.h>
+#include <dirent.h>
+#include "extract.h"
 
 //*******************************************************************************************************************
 //*                                    FUNCTION DEFINITION							    *
 //*******************************************************************************************************************
 char *construct_response(int status,char *buf,int con_len,char *con_type,char *con);
-char *extract_user_agent(char *header,char *buf);
-char *extract_echo_string(char *path,char *buf);
-char *extract_file_name(char *path,char *buf);
-bool end_of_header(char *buf);
-char *extract_header(int incoming_sockfd);
 char *get_arguments(int argc, char **argv);
 
 #define min(a, b) ({ \
@@ -161,9 +158,23 @@ int main(int argc, char** argv){
 				strncpy(version, ptok,min(10,strlen(ptok)));
 			}
 
-			char cwd[1024];
-			if(getcwd(cwd, sizeof(cwd)) == NULL){
-				perror("getcwd");
+			char cwd[4096];
+			DIR *d;
+			struct dirent *dir;
+			if(strlen(directory) <= 0){
+				if(getcwd(cwd, sizeof(cwd)) == NULL){
+					perror("getcwd");
+				}
+			}
+			else{
+				d = opendir(directory);
+				if(d == NULL){
+					printf("Can't open directory\n");
+					exit(-1);
+				}
+				else{
+					strncpy(cwd, directory, 4096);
+				}
 			}
 			printf("%s\n",request);
 			printf("%s\n",path);
@@ -176,8 +187,11 @@ int main(int argc, char** argv){
 			memset(echo_string,0, 1024);
 			memset(user_agent,0, 1024);
 			bool echo = false;
+			strcat(cwd, "/");
 			if(extract_file_name(path,file_name) != NULL){
-				if(access(strncat(cwd,file_name,strlen(file_name)), F_OK) == 0){
+				strncat(cwd,file_name,strlen(file_name));
+				if(access(cwd, F_OK) == 0){
+						printf("asdasdasdasd\n");
 						construct_response(200, response,0,"text/plain",NULL);
 						int send_client = send(accept_client,response,strlen(response),0);
 						if(send_client == -1){
@@ -186,7 +200,9 @@ int main(int argc, char** argv){
 						}
 				}
 				else{
+					printf("tihissisi\n");
 					construct_response(404, response,0,"text/plain",NULL);
+					printf("%s\n",response);
 					int send_client = send(accept_client,response,strlen(response),0);
 					if(send_client == -1){
 						perror("send");
@@ -236,14 +252,18 @@ int main(int argc, char** argv){
 
 
 char *construct_response(int status,char *buf,int con_len,char *con_type,char *con){
+	printf("ddddd\n");
 	if(con == NULL && status == 200){
 		strcpy(buf, "HTTP/1.1 200 OK\r\n\r\n");
+		printf("lllll\n");
 		return buf;
 	}
-	else if(status == 404) {
+	else if(con == NULL && status == 404) {
 		strcpy(buf,"HTTP/1.1 404 Not Found\r\n\r\n");
+		printf("wtf\n");
 		return buf;
 	}
+	printf("idk\n");
 	ulong snprintf_len = 0;
 	snprintf_len += strlen("HTTP/1.1 200 OK\r\n");
 	snprintf_len += strlen("Content-Type: \r\n") + strlen(con_type);
@@ -258,38 +278,6 @@ char *construct_response(int status,char *buf,int con_len,char *con_type,char *c
 		return buf;
 	}
 	return buf;
-}
-
-char *extract_user_agent(char *header,char *buf){
-	char *pUser_agent;
-	pUser_agent = strstr(header, "User-Agent");
-	if(pUser_agent != NULL){
-		strtok(pUser_agent, " ");
-		snprintf(buf,1024 , "%s", strtok(NULL, "\r"));
-		return buf;
-	}
-	return NULL;
-}
-
-char *extract_echo_string(char *path,char *buf){
-	char *pEcho;
-	char *echo;
-	if(strncmp(path, "/echo/", 6) == 0){
-		strtok(path, "/");
-		echo = strtok(NULL, "/");
-		memcpy(buf, echo, strlen(echo));
-		return buf;
-	}
-	return NULL;
-}
-
-bool end_of_header(char *buf){
-	char *pmatch;
-	pmatch = strstr(buf,"\r\n\r\n");
-	if(pmatch != NULL){
-		return true;
-	}
-	return false;
 }
 
 char *extract_header(int incoming_sockfd){
@@ -331,19 +319,6 @@ char *extract_header(int incoming_sockfd){
 		free(tmp);
 		printf("end of header\n");
 		return header;
-}
-
-char *extract_file_name(char *path, char *buf){
-	char file_name[255];
-	if(strncmp(path, "/file/", 6) == 0){
-		strtok(path, "/");
-		snprintf(file_name, 255,"%s" , strtok(NULL, "/"));
-		strncpy(buf,file_name , strlen(file_name));
-		return buf;
-	}
-	else{
-		return NULL;
-	}
 }
 
 char *get_arguments(int argc,char **argv){
