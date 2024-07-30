@@ -139,6 +139,7 @@ int main(int argc, char** argv){
 		}
 		if(childpid == 0){
 			header = extract_header(accept_client);
+			printf("header: %s\n",header);
 			if(main_break){
 				free(header);
 				free(response);
@@ -150,13 +151,14 @@ int main(int argc, char** argv){
 			char *ptok;
 			char *path;
 			char version[10] = {0};
-			char tmp_header[strlen(header)+1];
+			char tmp_request[strlen(header)+1];
+			char *host;
 			if(strlen(header) != 0){
-				memcpy(tmp_header, header, strlen(header)+1);
-				// printf("tmp header: %s\n",tmp_header);
+				memcpy(tmp_request, header, strlen(header)+1);
+				// printf("tmp header: %s\n",tmp_request);
 				path = malloc(2048);
 				memset(path, 0, 2048);
-				pstrtok = strtok(tmp_header, "\r\n");
+				pstrtok = strtok(tmp_request, "\r\n");
 				memcpy(request, pstrtok, 2048);
 				ptok = strtok(request, " ");
 				strncpy(method, ptok,min(8,strlen(ptok)));
@@ -164,12 +166,11 @@ int main(int argc, char** argv){
 				strncpy(path, ptok,2048);
 				ptok = strtok(NULL, "\r\n");
 				strncpy(version, ptok,min(10,strlen(ptok)));
+				host = extract_host(header);
 			}
-
-			char cwd[4096];
+			char cwd[4096] = {0};
 			DIR *d;
 			struct dirent *dir;
-			// printf("%s\n",directory);
 			if(strlen(directory) <= 0){
 				if(getcwd(cwd, sizeof(cwd)) == NULL){
 					perror("getcwd");
@@ -183,7 +184,7 @@ int main(int argc, char** argv){
 					closedir(d);
 				}
 				else{
-					strncpy(cwd, directory, 4096);
+					strncpy(cwd, directory, strlen(directory));
 					closedir(d);
 				}
 			}
@@ -195,38 +196,46 @@ int main(int argc, char** argv){
 			char file_name[1024] = {0};
 			char echo_string[1024] = {0};
 			bool echo = false;
-			strcat(cwd, "/");
+			if(cwd[strlen(cwd)-1] != '/'){
+				strcat(cwd, "/");
+			}
 			reply = malloc(1024);
 			memset(reply, 0, 1024);
-			if(extract_file_name(path,file_name) != NULL){
-				strncat(cwd,file_name,strlen(file_name));
-				if(access(cwd, F_OK) == 0){
-						FILE *fptr = fopen(cwd, "r");					
-						if(fptr == NULL){
-						perror("fopen");
+			if(strcmp(request, "GET") == 0){
+				if(extract_file_name(path,file_name) != NULL){
+					printf("%s\n",cwd);
+					strncat(cwd,file_name,strlen(file_name));
+					if(access(cwd, F_OK) == 0){
+							FILE *fptr = fopen(cwd, "r");					
+							if(fptr == NULL){
+								perror("fopen");
+								}
+							response = read_from_file(fptr, file_name);
+							reply = realloc(reply, strlen(response) + 2048);
+							construct_response(200, reply,strlen(response),"application/octet-stream",response);
+							int send_client = send(accept_client,reply,strlen(reply),0);
+							if(send_client == -1){
+								perror("send");
+								exit(-1);
+							}
+						fclose(fptr);
+						free_mem_close_sock(path, header, response, reply, accept_client);
+						continue;
 					}
-						response = read_from_file(fptr, file_name);
-						reply = realloc(reply, strlen(response) + 2048);
-						construct_response(200, reply,strlen(response),"application/octet-stream",response);
+					else{
+						construct_response(404, reply,0,"text/plain",NULL);
 						int send_client = send(accept_client,reply,strlen(reply),0);
 						if(send_client == -1){
 							perror("send");
 							exit(-1);
 						}
-					fclose(fptr);
-					free_mem_close_sock(path, header, response, reply, accept_client);
-					continue;
-				}
-				else{
-					construct_response(404, reply,0,"text/plain",NULL);
-					int send_client = send(accept_client,reply,strlen(reply),0);
-					if(send_client == -1){
-						perror("send");
-						exit(-1);
+						free_mem_close_sock(path, header, response, reply, accept_client);
+						continue;
 					}
-					free_mem_close_sock(path, header, response, reply, accept_client);
-					continue;
 				}
+			}
+			else if(strcmp(request, "POST") == 0) {
+				strncat(cwd,file_name,strlen(file_name));
 			}
 			if(extract_echo_string(path, echo_string) != NULL){
 				echo = true;
@@ -257,6 +266,12 @@ int main(int argc, char** argv){
 				}
 				free_mem_close_sock(path, header, response, reply, accept_client);
 				continue;
+			}
+			construct_response(200, reply,0,"text/plain", NULL);
+			int send_client = send(accept_client, reply, strlen(reply), 0);
+			if(send_client == -1){
+				perror("send");
+				exit(-1);
 			}
 			free_mem_close_sock(path, header, response, reply, accept_client);
 			continue;
@@ -351,9 +366,10 @@ char *read_from_file(FILE *fptr,char *file_name){
 	char *buf;
 	char tmp[2048];
 	size_t positon;
-	size_t cur_mem;
+	size_t curr_mem;
+	size_t curr_malloc_size;
 	uint32_t max_mem = UINT32_MAX;
-	cur_mem = 2048;
+	curr_malloc_size = 2048;
 	positon = 0;
 	buf = malloc(2048);
 	if(buf == NULL){
@@ -361,14 +377,15 @@ char *read_from_file(FILE *fptr,char *file_name){
 		return NULL;
 	}
 	while(fgets(tmp, 2048, fptr)){
-		if(feof(fptr)){
-			break;
-		}
 		memcpy(&buf[positon], tmp, strlen(tmp));
-		positon +=  strlen(tmp);
-		cur_mem +=  strlen(tmp);
-		if(cur_mem < max_mem){
-			buf = realloc(buf, cur_mem);
+		printf("tmp = %s\n",buf);
+		positon += strlen(tmp);
+		curr_mem += strlen(tmp)+1;
+		if(curr_malloc_size < max_mem){
+			if(curr_mem >= curr_malloc_size){
+				buf = realloc(buf, curr_malloc_size * 2);
+				curr_malloc_size = curr_malloc_size *2;
+			}
 		}
 		else{
 			perror("max memory reached\n");

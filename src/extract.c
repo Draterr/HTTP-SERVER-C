@@ -7,6 +7,7 @@
 char *extract_user_agent(char *header,char *buf);
 char *extract_echo_string(char *path,char *buf);
 char *extract_file_name(char *path,char *buf);
+char *extract_host(char *headers);
 bool end_of_header(char *buf);
 
 
@@ -52,6 +53,23 @@ char *extract_echo_string(char *path,char *buf){
 		echo = strtok(NULL, "/");
 		memcpy(buf, echo, strlen(echo));
 		return buf;
+	}
+	return NULL;
+}
+
+
+char *extract_host(char *headers){
+	char *host;
+	char *current;
+	char tmp[strlen(headers) + 1];
+	memcpy(tmp, headers, strlen(headers)+1);
+	host = strtok(tmp, "\r\n");
+	while(host != NULL){
+		host = strtok(NULL, "\r\n");
+		current = strstr(host, "Host:"); 
+		if(current != NULL){
+			return current;
+		}
 	}
 	return NULL;
 }
