@@ -1,6 +1,7 @@
 # TCP SERVER FROM SCRATCH IN > C
 - output file contents
-- 
+- HTTPS
+- Compression
 
 # BUGS
 - adding special characters in path hangs the program

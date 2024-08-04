@@ -4,8 +4,6 @@
 #include <stdbool.h>
 #include <sys/socket.h>
 
-char *extract_user_agent(char *header,char *buf);
-char *extract_echo_string(char *path,char *buf);
 char *extract_file_name(char *path,char *buf);
 char *extract_host(char *headers);
 bool end_of_header(char *buf);
@@ -22,41 +20,15 @@ bool end_of_header(char *buf){
 
 char *extract_file_name(char *path, char *buf){
 	char file_name[255];
-	if(strncmp(path, "/files/", 7) == 0){
-		strtok(path, "/");
-		snprintf(file_name, 255,"%s" , strtok(NULL, "\0"));
-		strncpy(buf,file_name , strlen(file_name));
-		return buf;
+	char *tmp;
+	tmp = strtok(path, "/");
+	while(tmp != NULL){
+		tmp = (strtok(NULL,"/"));
 	}
-	else{
-		return NULL;
-	}
+	snprintf(file_name, 255,"%s" , strtok(NULL, "/"));
+	strncpy(buf,file_name , strlen(file_name));
+	return buf;
 }
-
-char *extract_user_agent(char *header,char *buf){
-	char *pUser_agent;
-	pUser_agent = strstr(header, "User-Agent");
-	if(pUser_agent != NULL){
-		strtok(pUser_agent, " ");
-		snprintf(buf,1024 , "%s", strtok(NULL, "\r"));
-		return buf;
-	}
-	return NULL;
-}
-
-
-char *extract_echo_string(char *path,char *buf){
-	char *pEcho;
-	char *echo;
-	if(strncmp(path, "/echo/", 6) == 0){
-		strtok(path, "/");
-		echo = strtok(NULL, "/");
-		memcpy(buf, echo, strlen(echo));
-		return buf;
-	}
-	return NULL;
-}
-
 
 char *extract_host(char *headers){
 	char *host;

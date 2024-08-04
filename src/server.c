@@ -60,6 +60,9 @@ int main(int argc, char** argv){
 	pid_t childpid;
 	bool end_header;
 
+//*******************************************************************************************************************
+//*                                         SETTING UP SOCKETS
+//*******************************************************************************************************************
 	memset(&hints, 0, sizeof(struct addrinfo));
 	//AF_INET = IPV4
 	hints.ai_family = AF_INET;
@@ -113,6 +116,9 @@ int main(int argc, char** argv){
 		exit(-1);
 	}
 	freeaddrinfo(servinfo);
+//*******************************************************************************************************************
+//*                                        HTTP Related Code 
+//*******************************************************************************************************************
 	while(1){
 		//accept any incoming connections on the network socket (BLOCKING)
 		int accept_client = accept(sockfd, (struct sockaddr *)&incoming, &their_size);
@@ -203,7 +209,6 @@ int main(int argc, char** argv){
 			memset(reply, 0, 1024);
 			if(strcmp(request, "GET") == 0){
 				if(extract_file_name(path,file_name) != NULL){
-					printf("%s\n",cwd);
 					strncat(cwd,file_name,strlen(file_name));
 					if(access(cwd, F_OK) == 0){
 							FILE *fptr = fopen(cwd, "r");					
@@ -236,42 +241,6 @@ int main(int argc, char** argv){
 			}
 			else if(strcmp(request, "POST") == 0) {
 				strncat(cwd,file_name,strlen(file_name));
-			}
-			if(extract_echo_string(path, echo_string) != NULL){
-				echo = true;
-				if(strlen(reply) != 0){
-					strncat(reply, echo_string,strlen(echo_string));
-				}
-				else{
-					strncpy(reply, echo_string,strlen(echo_string));
-				}
-			}
-			// if(extract_user_agent(header, user_agent) != NULL){
-			// 	echo = true;	
-			// 	if(strlen(reply) != 0){
-			// 		strncat(reply, user_agent,strlen(user_agent));
-			// 	}
-			// 	else{
-			// 		strncpy(reply, user_agent,strlen(user_agent));
-			// 	}
-			// }
-			response = malloc(2048);
-			if(echo){
-				construct_response(200, response,strlen(reply),"text/plain",reply);
-				printf("response: %s\n",response);
-				int send_client = send(accept_client,response,strlen(response),0);
-				if(send_client == -1){
-					perror("send");
-					exit(-1);
-				}
-				free_mem_close_sock(path, header, response, reply, accept_client);
-				continue;
-			}
-			construct_response(200, reply,0,"text/plain", NULL);
-			int send_client = send(accept_client, reply, strlen(reply), 0);
-			if(send_client == -1){
-				perror("send");
-				exit(-1);
 			}
 			free_mem_close_sock(path, header, response, reply, accept_client);
 			continue;
