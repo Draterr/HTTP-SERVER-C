@@ -4,6 +4,7 @@
 - Compression
 
 # BUGS
-- adding special characters in path hangs the program
+- valgrind error in extract_header
+- memory leak
 - double free detected in tcache2 when I curl a missing file multiple times 
 - if file is > 2048 bytes the rest of the content is only transmitted when i crtl-c out of the server
