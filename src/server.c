@@ -16,15 +16,18 @@
 #include <dirent.h>
 #include <time.h>
 #include "extract.h"
+#include "response.h"
+
 
 //*******************************************************************************************************************
 //*                                    FUNCTION DEFINITION							    *
 //*******************************************************************************************************************
-char *construct_response(int status,char *buf,int con_len,char *con_type,char *con);
+// char *construct_two_hundred.content_body(int status,char *buf,u_int64_t con_len,char *con_type,char *con);
 char *get_arguments(int argc, char **argv);
 char *read_from_file(FILE *file);
 void remove_newline(char *word, int last_position);
-void free_mem_close_sock(char *path, char *header, char *response, char *reply, int socket);
+char *add_base_path(char *file_name);
+void free_mem_close_sock(char *path, char *header,char *reply, int socket);
 
 #define min(a, b) ({ \
     typeof(a) _a = (a); \
@@ -35,6 +38,8 @@ void free_mem_close_sock(char *path, char *header, char *response, char *reply, 
 //global variables
 bool main_break = false;
 char not_found_name[] = {"/response/404.html"};
+char bad_request_name[] = {"/response/400.html"};
+char response_file_path[4096] = {0};
 char current_dir[4096] = {0};
 int main(int argc, char** argv){
 	// if(argc < 3){
@@ -61,7 +66,6 @@ int main(int argc, char** argv){
 	char hbuf[NI_MAXHOST];
 	char hserv[NI_MAXSERV];
 	char *header;
-	char *response;
 	char method[8];
 	int cnt = 0;
 	pid_t childpid;
@@ -154,7 +158,6 @@ int main(int argc, char** argv){
 			header = extract_header(accept_client);
 			if(main_break){
 				free(header);
-				free(response);
 				printf("Connection Closed from %s %s\n",hbuf,hserv);
 				continue;
 			}
@@ -196,65 +199,93 @@ int main(int argc, char** argv){
 				strncpy(cwd, directory, strlen(directory));
 				closedir(d);
 			}
-			printf("%s\n",request);
-			printf("%s\n",path);
-			printf("%s\n",version);
+			if(cwd[strlen(cwd)-1] != '/'){
+				strcat(cwd, "/");
+			}
+
+			printf("Whole Request: %s\n",request);
+			printf("Request_Path: %s\n",path);
+			printf("HTTP_Version: %s\n",version);
 			char *reply;
+			reply = malloc(1024);
+			memset(reply, 0, 1024);
 			char user_agent[1024] = {0};
 			char file_name[1024] = {0};
 			char echo_string[1024] = {0};
 			bool echo = false;
-			if(cwd[strlen(cwd)-1] != '/'){
-				strcat(cwd, "/");
+			resp_t four_o_four = {.status = 404, .content_length = 0, .content_type = {0}, .content_body = NULL};
+			resp_t two_hundred = {.status = 200, .content_length = 0, .content_type = {0}, .content_body = NULL};
+			resp_t four_hundred = {.status = 400, .content_length = 0, .content_type = {0}, .content_body = NULL};
+
+
+			if(is_malformed_request(path,method)){
+				add_base_path(bad_request_name);
+				FILE *fptr = fopen(response_file_path, "r");
+				four_hundred.content_body = read_from_file(fptr);
+				four_hundred.content_length= strlen(four_hundred.content_body);
+				strcpy(four_hundred.content_type, "text/html");
+				construct_response(reply, four_hundred);
+				int send_client = send(accept_client,reply,strlen(reply),0);
+				if(send_client == -1){
+					perror("send");
+					exit(-1);
+				}
+				free(four_hundred.content_body);
+				fclose(fptr);
+				free_mem_close_sock(path, header, reply, accept_client);
+				continue;
+			}else{
+				extract_file_name(path, file_name);
+				strncat(cwd,file_name,strlen(file_name));
 			}
-			reply = malloc(1024);
-			memset(reply, 0, 1024);
 			if(strcmp(request, "GET") == 0){
-				if(extract_file_name(path,file_name) != NULL){
-					strncat(cwd,file_name,strlen(file_name));
 					if(access(cwd, F_OK) == 0){
 							FILE *fptr = fopen(cwd, "r");					
 							if(fptr == NULL){
 								perror("fopen");
 								}
-							response = read_from_file(fptr);
-							reply = realloc(reply, strlen(response) + 2048);
-							construct_response(200, reply,strlen(response),"application/octet-stream",response);
+							reply = realloc(reply, strlen(two_hundred.content_body) + 2048);
+							two_hundred.content_body = read_from_file(fptr);
+							two_hundred.content_length = strlen(two_hundred.content_body);
+							strcpy(two_hundred.content_type, "application/octet-stream");
+							construct_response(reply, two_hundred);
+							printf("read_from_file: %s\n",reply);
 							int send_client = send(accept_client,reply,strlen(reply),0);
 							if(send_client == -1){
 								perror("send");
 								exit(-1);
 							}
 						fclose(fptr);
-						free_mem_close_sock(path, header, response, reply, accept_client);
+						free(two_hundred.content_body);
+						free_mem_close_sock(path, header, reply, accept_client);
 						continue;
 					}
 					else{
-						char not_found_path[4096] = {0};
-						strncpy(not_found_path, current_dir, sizeof(current_dir));
-						strncat(not_found_path, not_found_name, strlen(not_found_name));
-						FILE *not_found = fopen(not_found_path, "r");
+						add_base_path(not_found_name);
+						FILE *not_found = fopen(response_file_path, "r");
 						if(!not_found){
 							perror("fopen response file");
-							printf("Failed to open the responses at %s\n",not_found_path);
+							printf("Failed to open the response at %s\n",response_file_path);
 						}
-						response = read_from_file(not_found);
-						construct_response(404, reply,strlen(response),"text/html",response);
+						four_o_four.content_body = read_from_file(not_found);
+						strcpy(four_o_four.content_type, "text/html");
+						four_o_four.content_length = strlen(four_o_four.content_body);
+						construct_response(reply, four_o_four);
 						int send_client = send(accept_client,reply,strlen(reply),0);
 						if(send_client == -1){
 							perror("send");
 							exit(-1);
 						}
-						free_mem_close_sock(path, header, response, reply, accept_client);
+						free_mem_close_sock(path, header, reply, accept_client);
+						free(four_o_four.content_body);
 						fclose(not_found);
 						continue;
 					}
 				}
-			}
 			else if(strcmp(request, "POST") == 0) {
 				strncat(cwd,file_name,strlen(file_name));
 			}
-			free_mem_close_sock(path, header, response, reply, accept_client);
+			free_mem_close_sock(path, header, reply, accept_client);
 			continue;
 			}
 	}
@@ -263,49 +294,19 @@ int main(int argc, char** argv){
 }
 
 
-
-char *construct_response(int status,char *buf,int con_len,char *con_type,char *con){
-	time_t time_struct = time(NULL);
-	char *current_time;
-	if(time_struct){
-		current_time = asctime(gmtime(&time_struct));
-		current_time[strlen(current_time) - 1] = 0;
-	}
-	ulong snprintf_len = 0;
-	if(status == 200){
-	snprintf_len += strlen("HTTP/1.0 200 OK\r\n");
-	}
-	if(status == 404){
-		snprintf_len += strlen("HTTP/1.0 404 Not Found\r\n");
-	}
-	snprintf_len += strlen("Content-Type: \r\n") + strlen(con_type);
-	snprintf_len += strlen("Content-Length: \r\n") + sizeof(int);
-	snprintf_len += strlen("Date: \r\n") + strlen(current_time);
-	snprintf_len += strlen("Server: nginY\r\n");
-
-	if(con != NULL){snprintf_len += strlen(con);}
-	//snprintf needs n+1 size to include null terminator
-	if(status == 200){
-		snprintf(buf, snprintf_len,"HTTP/1.0 200 OK\r\nContent-Type: %s\r\nContent-Length: %d\r\nDate: %s\r\nServer: nginY\r\n\r\n%s",con_type,con_len,current_time,con);
-	}
-	if(status == 404){
-		snprintf(buf, snprintf_len,"HTTP/1.0 404 OK\r\nContent-Type: %s\r\nContent-Length: %d\r\nDate: %s\r\nServer: nginY\r\n\r\n%s",con_type,con_len,current_time,con);
-	}
-	return buf;
-}
-
 char *extract_header(int incoming_sockfd){
-		uint current = 0;
+		ulong current = 0;
 		uint h_size = 2048;
 		char *tmp;
 		char *header;
 		char *new_ptr;
+		int i = 0;
 		header = malloc(2048);
 		memset(header, 0, 2048);
-		tmp = malloc(512);
-		memset(tmp, 0, 512);
-		while(end_of_header(tmp) == false){
-			memset(tmp, 0, 512);
+		tmp = malloc(513);
+		memset(tmp, 0, 513);
+		while(!end_of_header(tmp)){
+			memset(tmp, 0, 513);
 			int recv_client = recv(incoming_sockfd,tmp,512,0);
 			if(recv_client == -1){
 				perror("receive");
@@ -315,11 +316,22 @@ char *extract_header(int incoming_sockfd){
 				main_break = true;
 				break;
 			}
-			current += strlen(tmp);
+			if(recv_client > 0){
+				tmp[512] = 0;
+				current += strlen(tmp) + 1;
+			}
+			printf("h_size = %u, memory used = %lu\n",h_size, current);
 			if(current >= h_size){
 				h_size = h_size * 2;
+				if(h_size > UINT16_MAX){
+					printf("Maximum amount of memory exceeded!\n");
+					printf("Aborting...\n");
+					main_break = true;
+					break;
+				}
 				new_ptr = realloc(header, h_size);
 				if(new_ptr != NULL){
+					printf("reallocing...\n");
 					header = new_ptr;
 				}
 				else{
@@ -328,10 +340,8 @@ char *extract_header(int incoming_sockfd){
 				}
 			}
 			strncat(header, tmp,strlen(tmp));
-			printf("h_size = %u memory used = %u\n",h_size, current);
 		}
 		free(tmp);
-		printf("end of header\n");
 		return header;
 }
 
@@ -381,7 +391,6 @@ char *read_from_file(FILE *fptr){
 	buf = realloc(buf, positon + 1);
 	fseek(fptr, 0, SEEK_SET);
 	remove_newline(buf,positon);
-	printf("read_from_file: %s\n",buf);
 	return buf;
 }
 
@@ -392,10 +401,15 @@ void remove_newline(char *word,int last_position){
 	}
 }
 
-void free_mem_close_sock(char *path, char *header, char *response, char *reply, int socket){
+char *add_base_path(char *file_name){
+	strncpy(response_file_path, current_dir, strlen(current_dir));
+	strncat(response_file_path, file_name, strlen(file_name));
+	return response_file_path;
+}
+
+void free_mem_close_sock(char *path, char *header, char *reply, int socket){
 	free(path);
 	free(header);
 	free(reply);
-	free(response);
 	close(socket);
 }

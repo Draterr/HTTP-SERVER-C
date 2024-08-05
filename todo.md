@@ -1,10 +1,10 @@
 # TCP SERVER FROM SCRATCH IN > C
-- output file contents
+- output file contents /
+- 400 for malformed requests 
 - HTTPS
 - Compression
+- Post request
 
 # BUGS
-- valgrind error in extract_header
+- valgrind errors when request 404 at strncmp at valid_method func
 - memory leak
-- double free detected in tcache2 when I curl a missing file multiple times 
-- if file is > 2048 bytes the rest of the content is only transmitted when i crtl-c out of the server

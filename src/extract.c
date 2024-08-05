@@ -8,6 +8,7 @@
 char *extract_file_name(char *path,char *buf);
 char *extract_host(char *headers);
 bool end_of_header(char *buf);
+bool valid_method(char *method);
 
 
 bool end_of_header(char *buf){
@@ -19,6 +20,17 @@ bool end_of_header(char *buf){
 	return false;
 }
 
+bool valid_method(char *method){
+	char *valid_methods[] = {"GET","POST","HEAD","OPTIONS","PUT","DELETE","TRACE","PATCH"};
+	int v = 0;
+	while(v < sizeof(valid_methods) / sizeof(char *)){
+		if(strncmp(method,valid_methods[v],strlen(method)) == 0){
+			return true;		
+		}
+		v++;
+	}
+	return false;
+}
 char *extract_file_name(char *path, char *buf){
 	char file_name[255];
 	char *tmp;
