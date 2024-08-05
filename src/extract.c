@@ -52,7 +52,7 @@ char *extract_file_name(char *path, char *buf){
 		tmp = strtok(NULL,"/");
 	}
 	snprintf(file_name, 255,"%s", tmp);
-	strncpy(buf,file_name , strlen(file_name));
+	strncpy(buf,file_name , 1024);
 	return buf;
 }
 

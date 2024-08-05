@@ -22,7 +22,6 @@
 //*******************************************************************************************************************
 //*                                    FUNCTION DEFINITION							    *
 //*******************************************************************************************************************
-// char *construct_two_hundred.content_body(int status,char *buf,u_int64_t con_len,char *con_type,char *con);
 char *get_arguments(int argc, char **argv);
 char *read_from_file(FILE *file);
 void remove_newline(char *word, int last_position);
@@ -176,11 +175,11 @@ int main(int argc, char** argv){
 				pstrtok = strtok(tmp_request, "\r\n");
 				memcpy(request, pstrtok, 2048);
 				ptok = strtok(request, " ");
-				strncpy(method, ptok,min(8,strlen(ptok)));
+				strncpy(method, ptok,sizeof(method));
 				ptok = strtok(NULL, " ");
 				strncpy(path, ptok,2048);
 				ptok = strtok(NULL, "\r\n");
-				strncpy(version, ptok,min(10,strlen(ptok)));
+				strncpy(version, ptok,sizeof(method));
 				host = extract_host(header);
 			}
 			char cwd[4096] = {0};
@@ -196,7 +195,7 @@ int main(int argc, char** argv){
 				closedir(d);
 			}
 			else{
-				strncpy(cwd, directory, strlen(directory));
+				strncpy(cwd, directory, sizeof(cwd));
 				closedir(d);
 			}
 			if(cwd[strlen(cwd)-1] != '/'){
@@ -216,14 +215,20 @@ int main(int argc, char** argv){
 			resp_t four_o_four = {.status = 404, .content_length = 0, .content_type = {0}, .content_body = NULL};
 			resp_t two_hundred = {.status = 200, .content_length = 0, .content_type = {0}, .content_body = NULL};
 			resp_t four_hundred = {.status = 400, .content_length = 0, .content_type = {0}, .content_body = NULL};
+			is_malformed_s malformed; 
 
-
-			if(is_malformed_request(path,method)){
+			malformed = is_malformed_request(path,method);
+			if(malformed.uniontype == 0){
 				add_base_path(bad_request_name);
 				FILE *fptr = fopen(response_file_path, "r");
+				if(!fptr){
+					perror("fopen 400");
+					continue;
+				}
 				four_hundred.content_body = read_from_file(fptr);
-				four_hundred.content_length= strlen(four_hundred.content_body);
-				strcpy(four_hundred.content_type, "text/html");
+				four_hundred.content_length = strlen(four_hundred.content_body);
+				strncpy(four_hundred.content_type, "text/html", 129);
+				reply = realloc(reply, strlen(four_hundred.content_body) + 2048);
 				construct_response(reply, four_hundred);
 				int send_client = send(accept_client,reply,strlen(reply),0);
 				if(send_client == -1){
@@ -234,8 +239,8 @@ int main(int argc, char** argv){
 				fclose(fptr);
 				free_mem_close_sock(path, header, reply, accept_client);
 				continue;
-			}else{
-				extract_file_name(path, file_name);
+			}else if(malformed.uniontype == 1){
+				strncpy(file_name,malformed.inner_union.file_name,sizeof(file_name));
 				strncat(cwd,file_name,strlen(file_name));
 			}
 			if(strcmp(request, "GET") == 0){
@@ -244,10 +249,10 @@ int main(int argc, char** argv){
 							if(fptr == NULL){
 								perror("fopen");
 								}
-							reply = realloc(reply, strlen(two_hundred.content_body) + 2048);
 							two_hundred.content_body = read_from_file(fptr);
 							two_hundred.content_length = strlen(two_hundred.content_body);
-							strcpy(two_hundred.content_type, "application/octet-stream");
+							strncpy(four_hundred.content_type, "application/octet-stream", 129);
+							reply = realloc(reply, strlen(two_hundred.content_body) + 2048);
 							construct_response(reply, two_hundred);
 							printf("read_from_file: %s\n",reply);
 							int send_client = send(accept_client,reply,strlen(reply),0);
@@ -268,8 +273,9 @@ int main(int argc, char** argv){
 							printf("Failed to open the response at %s\n",response_file_path);
 						}
 						four_o_four.content_body = read_from_file(not_found);
-						strcpy(four_o_four.content_type, "text/html");
 						four_o_four.content_length = strlen(four_o_four.content_body);
+						strncpy(four_o_four.content_type, "text/html", 129);
+						reply = realloc(reply, strlen(four_o_four.content_body) + 2048);
 						construct_response(reply, four_o_four);
 						int send_client = send(accept_client,reply,strlen(reply),0);
 						if(send_client == -1){
@@ -402,7 +408,7 @@ void remove_newline(char *word,int last_position){
 }
 
 char *add_base_path(char *file_name){
-	strncpy(response_file_path, current_dir, strlen(current_dir));
+	strncpy(response_file_path, current_dir, sizeof(response_file_path));
 	strncat(response_file_path, file_name, strlen(file_name));
 	return response_file_path;
 }
