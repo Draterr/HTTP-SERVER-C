@@ -8,4 +8,5 @@
 - Post request
 
 # BUGS
+- / goes to 400 should go to index 
 - memory leak

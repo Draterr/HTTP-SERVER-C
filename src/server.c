@@ -17,6 +17,7 @@
 #include <time.h>
 #include "extract.h"
 #include "response.h"
+#include "compression/gzip.h"
 
 
 //*******************************************************************************************************************
@@ -364,48 +365,6 @@ char *get_arguments(int argc,char **argv){
 	return NULL;
 }
 
-char *read_from_file(FILE *fptr){
-	char *buf;
-	char tmp[2048];
-	size_t positon;
-	size_t curr_mem;
-	size_t curr_malloc_size;
-	uint32_t max_mem = UINT32_MAX;
-	curr_malloc_size = 2048;
-	curr_mem = 0;
-	positon = 0;
-	buf = malloc(2048);
-	if(buf == NULL){
-		perror("malloc");
-		return NULL;
-	}
-	while(fgets(tmp, 2048, fptr)){
-		memcpy(&buf[positon], tmp, strlen(tmp));
-		positon += strlen(tmp);
-		curr_mem += strlen(tmp)+1;
-		if(curr_malloc_size < max_mem){
-			if(curr_mem >= curr_malloc_size){
-				buf = realloc(buf, curr_malloc_size * 2);
-				curr_malloc_size = curr_malloc_size *2;
-			}
-		}
-		else{
-			perror("max memory reached\n");
-			return buf;
-		}
-	}
-	buf = realloc(buf, positon + 1);
-	fseek(fptr, 0, SEEK_SET);
-	remove_newline(buf,positon);
-	return buf;
-}
-
-void remove_newline(char *word,int last_position){
-	int new_line_pos = last_position - 1;	
-	if(word[new_line_pos] == '\n'){
-		word[new_line_pos] = 0;
-	}
-}
 
 char *add_base_path(char *file_name){
 	strncpy(response_file_path, current_dir, sizeof(response_file_path));
