@@ -15,6 +15,7 @@
 #include <unistd.h>
 #include <dirent.h>
 #include <time.h>
+#include <zlib.h>
 #include "extract.h"
 #include "response.h"
 #include "compression/gzip.h"
@@ -26,14 +27,13 @@
 char *get_arguments(int argc, char **argv);
 void remove_newline(char *word, int last_position);
 char *add_base_path(char *file_name);
-void free_mem_close_sock(char *path, char *header,char *reply, int socket);
+void free_mem_close_sock(char *path, char *header,char *reply, int socket,char **encoding);
 
 #define min(a, b) ({ \
     typeof(a) _a = (a); \
     typeof(b) _b = (b); \
     _a < _b ? _a : _b; \
     })
-
 //global variables
 bool main_break = false;
 char not_found_name[] = {"/response/404.html"};
@@ -162,6 +162,7 @@ int main(int argc, char** argv){
 			}
 			char request[2048];
 			char *pstrtok;
+			char **encoding;
 			char *ptok;
 			char *path;
 			char version[10] = {0};
@@ -169,7 +170,6 @@ int main(int argc, char** argv){
 			char *host;
 			if(strlen(header) != 0){
 				memcpy(tmp_request, header, strlen(header)+1);
-				// printf("tmp header: %s\n",tmp_request);
 				path = malloc(2048);
 				memset(path, 0, 2048);
 				pstrtok = strtok(tmp_request, "\r\n");
@@ -181,6 +181,7 @@ int main(int argc, char** argv){
 				ptok = strtok(NULL, "\r\n");
 				strncpy(version, ptok,sizeof(method));
 				host = extract_host(header);
+				encoding = extract_encoding(header);
 			}
 			char cwd[4096] = {0};
 			if(getcwd(current_dir, sizeof(current_dir)) == NULL){
@@ -205,9 +206,6 @@ int main(int argc, char** argv){
 			printf("Whole Request: %s\n",request);
 			printf("Request_Path: %s\n",path);
 			printf("HTTP_Version: %s\n",version);
-			char *reply;
-			reply = malloc(1024);
-			memset(reply, 0, 1024);
 			char user_agent[1024] = {0};
 			char file_name[1024] = {0};
 			char echo_string[1024] = {0};
@@ -216,6 +214,10 @@ int main(int argc, char** argv){
 			resp_t two_hundred = {.status = 200, .content_length = 0, .content_type = {0}, .content_body = NULL};
 			resp_t four_hundred = {.status = 400, .content_length = 0, .content_type = {0}, .content_body = NULL};
 			is_malformed_s malformed; 
+			resp_info response = {0};
+			response.buf = malloc(1024);
+			memset(response.buf, 0, 1024);
+			response.header_len = 0;
 
 			malformed = is_malformed_request(path,method);
 			if(malformed.uniontype == 0){
@@ -228,23 +230,24 @@ int main(int argc, char** argv){
 				four_hundred.content_body = read_from_file(fptr);
 				four_hundred.content_length = strlen(four_hundred.content_body);
 				strncpy(four_hundred.content_type, "text/html", 129);
-				reply = realloc(reply, strlen(four_hundred.content_body) + 2048);
-				construct_response(reply, four_hundred);
-				int send_client = send(accept_client,reply,strlen(reply),0);
+				response.buf = realloc(response.buf, strlen(four_hundred.content_body) + 2048);
+				response = construct_response(response, four_hundred);
+				int send_client = send(accept_client,response.buf,strlen(response.buf),0);
 				if(send_client == -1){
 					perror("send");
 					exit(-1);
 				}
 				free(four_hundred.content_body);
 				fclose(fptr);
-				free_mem_close_sock(path, header, reply, accept_client);
+				free_mem_close_sock(path, header, response.buf, accept_client,encoding);
 				continue;
 			}else if(malformed.uniontype == 1){
 				strncpy(file_name,malformed.inner_union.file_name,sizeof(file_name));
 				strncat(cwd,file_name,strlen(file_name));
 			}
 			if(strcmp(request, "GET") == 0){
-					if(access(cwd, F_OK) == 0){
+					int can_access = access(cwd, F_OK);
+					if(can_access == 0 && encoding == NULL){
 							FILE *fptr = fopen(cwd, "r");					
 							if(fptr == NULL){
 								perror("fopen");
@@ -252,20 +255,20 @@ int main(int argc, char** argv){
 							two_hundred.content_body = read_from_file(fptr);
 							two_hundred.content_length = strlen(two_hundred.content_body);
 							strncpy(four_hundred.content_type, "application/octet-stream", 129);
-							reply = realloc(reply, strlen(two_hundred.content_body) + 2048);
-							construct_response(reply, two_hundred);
-							printf("read_from_file: %s\n",reply);
-							int send_client = send(accept_client,reply,strlen(reply),0);
+							response.buf = realloc(response.buf, strlen(two_hundred.content_body) + 2048);
+							response = construct_response(response, two_hundred);
+							printf("read_from_file: %s\n",response.buf);
+							int send_client = send(accept_client,response.buf,strlen(response.buf),0);
 							if(send_client == -1){
 								perror("send");
 								exit(-1);
 							}
 						fclose(fptr);
 						free(two_hundred.content_body);
-						free_mem_close_sock(path, header, reply, accept_client);
+						free_mem_close_sock(path, header, response.buf, accept_client,encoding);
 						continue;
 					}
-					else{
+					else if(can_access != 0 && encoding == NULL){
 						add_base_path(not_found_name);
 						FILE *not_found = fopen(response_file_path, "r");
 						if(!not_found){
@@ -274,19 +277,43 @@ int main(int argc, char** argv){
 						}
 						four_o_four.content_body = read_from_file(not_found);
 						four_o_four.content_length = strlen(four_o_four.content_body);
-						char *compressed_output = malloc(37);
-						gzip_compress("test", 5, compressed_output, 213);
-						printf("compressed_output: %s\n",compressed_output);
 						strncpy(four_o_four.content_type, "text/html", 129);
-						reply = realloc(reply, strlen(four_o_four.content_body) + 2048);
-						construct_response(reply, four_o_four);
-						int send_client = send(accept_client,reply,strlen(reply),0);
+						response.buf = realloc(response.buf, strlen(four_o_four.content_body) + 2048);
+						construct_response(response, four_o_four);
+						int send_client = send(accept_client,response.buf,strlen(response.buf),0);
 						if(send_client == -1){
 							perror("send");
 							exit(-1);
 						}
-						free_mem_close_sock(path, header, reply, accept_client);
+						free_mem_close_sock(path, header, response.buf, accept_client,encoding);
 						free(four_o_four.content_body);
+						fclose(not_found);
+						continue;
+					}
+					else if (can_access != 0 && encoding != NULL){
+						add_base_path(not_found_name);
+						FILE *not_found = fopen(response_file_path, "r");
+						if(!not_found){
+							perror("fopen response file");
+							printf("Failed to open the response at %s\n",response_file_path);
+						}
+						four_o_four.content_body = read_from_file(not_found);
+						char compressed_output[1024];
+						char idk[1024];
+						int compress_size = gzip_compress(four_o_four.content_body, strlen(four_o_four.content_body), compressed_output, 1024);
+						printf("compressed_size : %d\n",compress_size);
+						four_o_four.content_length = compress_size;
+						memcpy(four_o_four.content_body, compressed_output, compress_size);
+						strncpy(four_o_four.content_type, "text/html", 129);
+						response.buf = realloc(response.buf, strlen(four_o_four.content_body) + 2048);
+						response = construct_response(response, four_o_four);
+						printf("%u\n",response.header_len);
+						int send_client = send(accept_client,response.buf,compress_size + response.header_len,0);
+						if(send_client == -1){
+							perror("send");
+							exit(-1);
+						}
+						free_mem_close_sock(path, header, response.buf, accept_client,encoding);
 						fclose(not_found);
 						continue;
 					}
@@ -294,7 +321,7 @@ int main(int argc, char** argv){
 			else if(strcmp(request, "POST") == 0) {
 				strncat(cwd,file_name,strlen(file_name));
 			}
-			free_mem_close_sock(path, header, reply, accept_client);
+			free_mem_close_sock(path, header, response.buf, accept_client,encoding);
 			continue;
 			}
 	}
@@ -374,7 +401,8 @@ char *add_base_path(char *file_name){
 	return response_file_path;
 }
 
-void free_mem_close_sock(char *path, char *header, char *reply, int socket){
+void free_mem_close_sock(char *path, char *header, char *reply, int socket,char **encoding){
+	free_encoding(encoding);
 	free(path);
 	free(header);
 	free(reply);

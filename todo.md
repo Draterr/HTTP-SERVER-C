@@ -9,4 +9,6 @@
 
 # BUGS
 - / goes to 400 should go to index 
+- wrong header len
+- binary data is not right
 - memory leak

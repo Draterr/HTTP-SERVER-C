@@ -9,24 +9,25 @@
 
 char *read_from_file(FILE *fptr);
 void remove_newline(char *word,int last_position);
-int gzip_compress(char *file_content, unsigned int input_size, char *output , unsigned int output_size);
+int gzip_compress(const char *file_content, int input_size, char *output , int output_size);
 
-int gzip_compress(char *file_content, unsigned int input_size, char *output , unsigned int output_size){
-	z_stream strm;
+int gzip_compress(const char *file_content, int input_size, char *output , int output_size){
+	z_stream strm = {0};
 	strm.zalloc = Z_NULL;
 	strm.zfree = Z_NULL;
 	strm.opaque = Z_NULL;
-	strm.avail_in = input_size;
+	strm.avail_in = (uInt)input_size;
 	strm.next_in = (Bytef *)file_content;
-	strm.avail_out = output_size;
+	strm.avail_out = (uInt)output_size;
 	strm.next_out = (Bytef *)output;
 	deflateInit2(&strm, Z_DEFAULT_COMPRESSION, Z_DEFLATED,15|16, 8, Z_DEFAULT_STRATEGY);
 	int def = deflate(&strm, Z_FINISH);
-	assert(def==Z_STREAM_END);
-	// int asd = deflateBound(&strm,input_size);
+	if(def != Z_STREAM_END){
+		perror("deflate");
+		deflateEnd(&strm);
+		return 0;
+	}
 	deflateEnd(&strm);
-	printf("%s\n",strm.next_out);
-	printf("avail: %d\n",strm.avail_out);
 	return strm.total_out;
 }
 

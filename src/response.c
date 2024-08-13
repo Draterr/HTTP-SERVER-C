@@ -9,7 +9,7 @@
 #include "extract.h"
 
 
-char *construct_response(char *buf,resp_t response_content){
+resp_info construct_response(resp_info response_information,resp_t response_content){
 	time_t time_struct = time(NULL);
 	char *current_time;
 	if(time_struct){
@@ -35,20 +35,21 @@ char *construct_response(char *buf,resp_t response_content){
 	snprintf_len += strlen("Server: nginY\r\n");
 	snprintf_len += strlen("Content-Encoding: gzip\r\n");
 	snprintf_len += strlen("\r\n");
+	response_information.header_len = snprintf_len;
 
 	if(response_content.content_body != NULL){snprintf_len += strlen(response_content.content_body);}
 
 	//snprintf needs n+1 size to include null terminator
 	if(response_content.status == 200){
-		snprintf(buf, snprintf_len + 1,"HTTP/1.0 200 OK\r\nContent-Type: %s\r\nContent-Length: %lu\r\nDate: %s\r\nContent-Encoding: gzip\r\nServer: nginY\r\n\r\n%s",response_content.content_type,response_content.content_length,current_time,response_content.content_body);
+		snprintf(response_information.buf, snprintf_len + 1,"HTTP/1.0 200 OK\r\nContent-Type: %s\r\nContent-Length: %lu\r\nDate: %s\r\nContent-Encoding: gzip\r\nServer: nginY\r\n\r\n%s",response_content.content_type,response_content.content_length,current_time,response_content.content_body);
 	}
 	if(response_content.status == 404){
-		snprintf(buf, snprintf_len + 1,"HTTP/1.0 404 OK\r\nContent-Type: %s\r\nContent-Length: %lu\r\nDate: %s\r\nContent-Encoding: gzip\r\nServer: nginY\r\n\r\n%s",response_content.content_type,response_content.content_length,current_time,response_content.content_body);
+		snprintf(response_information.buf, snprintf_len + 1,"HTTP/1.0 404 OK\r\nContent-Type: %s\r\nContent-Length: %lu\r\nDate: %s\r\nContent-Encoding: gzip\r\nServer: nginY\r\n\r\n%s",response_content.content_type,response_content.content_length,current_time,response_content.content_body);
 	}
 	if(response_content.status == 400){
-		snprintf(buf, snprintf_len + 1,"HTTP/1.0 400 OK\r\nContent-Type: %s\r\nContent-Length: %lu\r\nDate: %s\r\nServer: nginY\r\n\r\n%s",response_content.content_type,response_content.content_length,current_time,response_content.content_body);
+		snprintf(response_information.buf, snprintf_len + 1,"HTTP/1.0 400 OK\r\nContent-Type: %s\r\nContent-Length: %lu\r\nDate: %s\r\nServer: nginY\r\n\r\n%s",response_content.content_type,response_content.content_length,current_time,response_content.content_body);
 	}
-	return buf;
+	return response_information;
 }
 
 is_malformed_s is_malformed_request(char *path,char *method){

@@ -17,6 +17,11 @@ typedef struct is_malformed_s{
 	is_malformed_u inner_union;
 }is_malformed_s;
 
+typedef struct response_info{
+	char *buf;
+	unsigned int header_len;
+}resp_info;
 
-extern char *construct_response(char *buf, resp_t response_content);
+
+extern resp_info construct_response(resp_info response_information, resp_t response_content);
 extern is_malformed_s is_malformed_request(char *path, char *method);

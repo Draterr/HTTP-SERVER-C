@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <assert.h>
 #include <sys/socket.h>
+#include <time.h>
 
 char *extract_file_name(char *path,char *buf);
 char *extract_host(char *headers);
@@ -70,4 +71,45 @@ char *extract_host(char *headers){
 		}
 	}
 	return NULL;
+}
+
+char **extract_encoding(char *headers){
+	char **encoding = malloc(sizeof(char *) * 6);
+	char *current;
+	char tmp[strlen(headers)+1];
+	int i;
+	int val;
+	for(i=0;i<6;i++){
+		encoding[i] = malloc(sizeof(char) *20);
+	}
+	memcpy(tmp, headers, strlen(headers)+1);
+	current = strstr(tmp,"Accept-Encoding: ");
+	i = 0;
+	if(current != NULL){
+		strtok(current, ":");
+		current = strtok(NULL, ",");
+		while(current != NULL){
+			if(current[0] == ' '){
+				current++;
+			}
+			strncpy(encoding[i], current,19);
+			current = strtok(NULL, ",");
+			i++;
+		}
+		encoding = realloc(encoding,sizeof(char *) * i);
+		return encoding;
+	}
+	else{
+		return NULL;
+	}
+}
+
+void free_encoding(char **encoding){
+	int i;
+	i = 0;
+	while(encoding[i] != NULL){
+		free(encoding[i]);
+		i++;
+	}
+	free(encoding);
 }
