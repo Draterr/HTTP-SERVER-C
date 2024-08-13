@@ -24,7 +24,6 @@
 //*                                    FUNCTION DEFINITION							    *
 //*******************************************************************************************************************
 char *get_arguments(int argc, char **argv);
-char *read_from_file(FILE *file);
 void remove_newline(char *word, int last_position);
 char *add_base_path(char *file_name);
 void free_mem_close_sock(char *path, char *header,char *reply, int socket);
@@ -275,6 +274,9 @@ int main(int argc, char** argv){
 						}
 						four_o_four.content_body = read_from_file(not_found);
 						four_o_four.content_length = strlen(four_o_four.content_body);
+						char *compressed_output = malloc(37);
+						gzip_compress("test", 5, compressed_output, 213);
+						printf("compressed_output: %s\n",compressed_output);
 						strncpy(four_o_four.content_type, "text/html", 129);
 						reply = realloc(reply, strlen(four_o_four.content_body) + 2048);
 						construct_response(reply, four_o_four);

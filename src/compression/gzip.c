@@ -3,34 +3,31 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <assert.h>
 
 #define CHUNK 16384 
 
 char *read_from_file(FILE *fptr);
 void remove_newline(char *word,int last_position);
-int gzip_compress(char *file_content);
+int gzip_compress(char *file_content, unsigned int input_size, char *output , unsigned int output_size);
 
-int gzip_compress(char *file_content){
-	// int ret,flush;
-	// unsigned have;
-	// z_stream strm;
-	// unsigned int size;
-	// size = strlen(file_content) + 1;
-	// unsigned char in[size];
-	// unsigned char out[size];
-	//
-	// strm.zalloc = Z_NULL;
-	// strm.zfree = Z_NULL;
-	// strm.opaque = Z_NULL;
-	// ret = deflateInit(&strm, -1);
-	// if(ret != Z_OK){
-	// 	perror("deflateinit");
-	// 	return ret;
-	// }
-	// strm.avail_in = size;
-	// strm.next_in = (Bytef *)file_content;
-	// strm.avail_out = size;
-	// strm.next_out = out;
+int gzip_compress(char *file_content, unsigned int input_size, char *output , unsigned int output_size){
+	z_stream strm;
+	strm.zalloc = Z_NULL;
+	strm.zfree = Z_NULL;
+	strm.opaque = Z_NULL;
+	strm.avail_in = input_size;
+	strm.next_in = (Bytef *)file_content;
+	strm.avail_out = output_size;
+	strm.next_out = (Bytef *)output;
+	deflateInit2(&strm, Z_DEFAULT_COMPRESSION, Z_DEFLATED,15|16, 8, Z_DEFAULT_STRATEGY);
+	int def = deflate(&strm, Z_FINISH);
+	assert(def==Z_STREAM_END);
+	// int asd = deflateBound(&strm,input_size);
+	deflateEnd(&strm);
+	printf("%s\n",strm.next_out);
+	printf("avail: %d\n",strm.avail_out);
+	return strm.total_out;
 }
 
 char *read_from_file(FILE *fptr){
