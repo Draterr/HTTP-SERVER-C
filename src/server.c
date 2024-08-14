@@ -231,7 +231,7 @@ int main(int argc, char** argv){
 				four_hundred.content_length = strlen(four_hundred.content_body);
 				strncpy(four_hundred.content_type, "text/html", 129);
 				response.buf = realloc(response.buf, strlen(four_hundred.content_body) + 2048);
-				response = construct_response(response, four_hundred);
+				response = construct_response(response, four_hundred,0);
 				int send_client = send(accept_client,response.buf,strlen(response.buf),0);
 				if(send_client == -1){
 					perror("send");
@@ -256,7 +256,7 @@ int main(int argc, char** argv){
 							two_hundred.content_length = strlen(two_hundred.content_body);
 							strncpy(four_hundred.content_type, "application/octet-stream", 129);
 							response.buf = realloc(response.buf, strlen(two_hundred.content_body) + 2048);
-							response = construct_response(response, two_hundred);
+							response = construct_response(response, two_hundred,0);
 							printf("read_from_file: %s\n",response.buf);
 							int send_client = send(accept_client,response.buf,strlen(response.buf),0);
 							if(send_client == -1){
@@ -279,7 +279,7 @@ int main(int argc, char** argv){
 						four_o_four.content_length = strlen(four_o_four.content_body);
 						strncpy(four_o_four.content_type, "text/html", 129);
 						response.buf = realloc(response.buf, strlen(four_o_four.content_body) + 2048);
-						construct_response(response, four_o_four);
+						construct_response(response, four_o_four,0);
 						int send_client = send(accept_client,response.buf,strlen(response.buf),0);
 						if(send_client == -1){
 							perror("send");
@@ -301,13 +301,12 @@ int main(int argc, char** argv){
 						char compressed_output[1024];
 						char idk[1024];
 						int compress_size = gzip_compress(four_o_four.content_body, strlen(four_o_four.content_body), compressed_output, 1024);
-						printf("compressed_size : %d\n",compress_size);
 						four_o_four.content_length = compress_size;
 						memcpy(four_o_four.content_body, compressed_output, compress_size);
-						strncpy(four_o_four.content_type, "text/html", 129);
-						response.buf = realloc(response.buf, strlen(four_o_four.content_body) + 2048);
-						response = construct_response(response, four_o_four);
-						printf("%u\n",response.header_len);
+						strncpy(four_o_four.content_type, "text/html", strlen("text/html"));
+						response.buf = realloc(response.buf, compress_size + 2048);
+						response = construct_response(response, four_o_four,1);
+						printf("idkmanplswork: %u\n",response.header_len);
 						int send_client = send(accept_client,response.buf,compress_size + response.header_len,0);
 						if(send_client == -1){
 							perror("send");

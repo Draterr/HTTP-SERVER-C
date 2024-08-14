@@ -23,5 +23,5 @@ typedef struct response_info{
 }resp_info;
 
 
-extern resp_info construct_response(resp_info response_information, resp_t response_content);
+extern resp_info construct_response(resp_info response_information, resp_t response_content,int data_type);
 extern is_malformed_s is_malformed_request(char *path, char *method);
