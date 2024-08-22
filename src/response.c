@@ -32,35 +32,60 @@ resp_info construct_response(resp_info response_information,resp_t response_cont
 	snprintf_len += strlen("Content-Length: \r\n") + strlen(content_length_str);
 	snprintf_len += strlen("Date: \r\n") + strlen(current_time);
 	snprintf_len += strlen("Server: nginY\r\n");
-	snprintf_len += strlen("Content-Encoding: gzip\r\n");
 	snprintf_len += strlen("\r\n");
 	response_information.header_len = snprintf_len;
-
+	
+	if(response_content.encoding != 0){snprintf_len += strlen("Content-Encoding: gzip\r\n");}
 	if(response_content.content_body != NULL && data_type == 0){snprintf_len += response_content.content_length;}
 
 	//snprintf needs n+1 size to include null terminator
-	if(response_content.status == 200 && data_type == 0){
-		snprintf(response_information.buf, snprintf_len + 1,"HTTP/1.0 200 OK\r\nContent-Type: %s\r\nContent-Length: %lu\r\nDate: %s\r\nContent-Encoding: gzip\r\nServer: nginY\r\n\r\n%s",response_content.content_type,response_content.content_length,current_time,response_content.content_body);
-	}
-	if(response_content.status == 404 && data_type == 0){
-		snprintf(response_information.buf, snprintf_len + 1,"HTTP/1.0 404 Not Found\r\nContent-Type: %s\r\nContent-Length: %lu\r\nDate: %s\r\nContent-Encoding: gzip\r\nServer: nginY\r\n\r\n%s",response_content.content_type,response_content.content_length,current_time,response_content.content_body);
-	}
-	if(response_content.status == 400 && data_type == 0){
-		snprintf(response_information.buf, snprintf_len + 1,"HTTP/1.0 400 Bad Request\r\nContent-Type: %s\r\nContent-Length: %lu\r\nDate: %s\r\nServer: nginY\r\n\r\n%s",response_content.content_type,response_content.content_length,current_time,response_content.content_body);
-	}
+	if(response_content.encoding != 0){
+		if(response_content.status == 200 && data_type == 0){
+			snprintf(response_information.buf, snprintf_len + 1,"HTTP/1.0 200 OK\r\nContent-Type: %s\r\nContent-Length: %lu\r\nDate: %s\r\nContent-Encoding: gzip\r\nServer: nginY\r\n\r\n%s",response_content.content_type,response_content.content_length,current_time,response_content.content_body);
+		}
+		if(response_content.status == 404 && data_type == 0){
+			snprintf(response_information.buf, snprintf_len + 1,"HTTP/1.0 404 Not Found\r\nContent-Type: %s\r\nContent-Length: %lu\r\nDate: %s\r\nContent-Encoding: gzip\r\nServer: nginY\r\n\r\n%s",response_content.content_type,response_content.content_length,current_time,response_content.content_body);
+		}
+		if(response_content.status == 400 && data_type == 0){
+			snprintf(response_information.buf, snprintf_len + 1,"HTTP/1.0 400 Bad Request\r\nContent-Type: %s\r\nContent-Length: %lu\r\nDate: %s\r\nServer: nginY\r\n\r\n%s",response_content.content_type,response_content.content_length,current_time,response_content.content_body);
+		}
 
 
-	if(response_content.status == 200 && data_type == 1){
-		snprintf(response_information.buf, snprintf_len + 1,"HTTP/1.0 200 OK\r\nContent-Type: %s\r\nContent-Length: %lu\r\nDate: %s\r\nContent-Encoding: gzip\r\nServer: nginY\r\n\r\n%s",response_content.content_type,response_content.content_length,current_time,response_content.content_body);
+		if(response_content.status == 200 && data_type == 1){
+			snprintf(response_information.buf, snprintf_len + 1,"HTTP/1.0 200 OK\r\nContent-Type: %s\r\nContent-Length: %lu\r\nDate: %s\r\nContent-Encoding: gzip\r\nServer: nginY\r\n\r\n%s",response_content.content_type,response_content.content_length,current_time,response_content.content_body);
+			memcpy(&response_information.buf[snprintf_len],response_content.content_body, response_content.content_length);
+		}
+		if(response_content.status == 404 && data_type == 1){
+			snprintf(response_information.buf, snprintf_len + 1,"HTTP/1.0 404 Not Found\r\nContent-Type: %s\r\nContent-Length: %lu\r\nDate: %s\r\nContent-Encoding: gzip\r\nServer: nginY\r\n\r\n",response_content.content_type,response_content.content_length,current_time);
+			memcpy(&response_information.buf[snprintf_len],response_content.content_body, response_content.content_length);
+		}
+		if(response_content.status == 400 && data_type == 1){
+			snprintf(response_information.buf, snprintf_len + 1,"HTTP/1.0 400 Bad Request\r\nContent-Type: %s\r\nContent-Length: %lu\r\nDate: %s\r\nServer: nginY\r\n\r\n%s",response_content.content_type,response_content.content_length,current_time,response_content.content_body);
+			memcpy(&response_information.buf[snprintf_len],response_content.content_body, response_content.content_length);
+		}
 	}
-	if(response_content.status == 404 && data_type == 1){
-		snprintf(response_information.buf, snprintf_len + 1,"HTTP/1.0 404 Not Found\r\nContent-Type: %s\r\nContent-Length: %lu\r\nDate: %s\r\nContent-Encoding: gzip\r\nServer: nginY\r\n\r\n",response_content.content_type,response_content.content_length,current_time);
-		memcpy(&response_information.buf[snprintf_len],response_content.content_body, response_content.content_length);
-	}
-	if(response_content.status == 400 && data_type == 1){
-		snprintf(response_information.buf, snprintf_len + 1,"HTTP/1.0 400 Bad Request\r\nContent-Type: %s\r\nContent-Length: %lu\r\nDate: %s\r\nServer: nginY\r\n\r\n%s",response_content.content_type,response_content.content_length,current_time,response_content.content_body);
-	}
+	else{
+		if(response_content.status == 200 && data_type == 0){
+			snprintf(response_information.buf, snprintf_len + 1,"HTTP/1.0 200 OK\r\nContent-Type: %s\r\nContent-Length: %lu\r\nDate: %s\r\nServer: nginY\r\n\r\n%s",response_content.content_type,response_content.content_length,current_time,response_content.content_body);
+		}
+		if(response_content.status == 404 && data_type == 0){
+			snprintf(response_information.buf, snprintf_len + 1,"HTTP/1.0 404 Not Found\r\nContent-Type: %s\r\nContent-Length: %lu\r\nDate: %s\r\nServer: nginY\r\n\r\n%s",response_content.content_type,response_content.content_length,current_time,response_content.content_body);
+		}
+		if(response_content.status == 400 && data_type == 0){
+			snprintf(response_information.buf, snprintf_len + 1,"HTTP/1.0 400 Bad Request\r\nContent-Type: %s\r\nContent-Length: %lu\r\nDate: %s\r\nServer: nginY\r\n\r\n%s",response_content.content_type,response_content.content_length,current_time,response_content.content_body);
+		}
 
+
+		if(response_content.status == 200 && data_type == 1){
+			snprintf(response_information.buf, snprintf_len + 1,"HTTP/1.0 200 OK\r\nContent-Type: %s\r\nContent-Length: %lu\r\nDate: %s\r\nServer: nginY\r\n\r\n%s",response_content.content_type,response_content.content_length,current_time,response_content.content_body);
+		}
+		if(response_content.status == 404 && data_type == 1){
+			snprintf(response_information.buf, snprintf_len + 1,"HTTP/1.0 404 Not Found\r\nContent-Type: %s\r\nContent-Length: %lu\r\nDate: %s\r\nServer: nginY\r\n\r\n",response_content.content_type,response_content.content_length,current_time);
+		}
+		if(response_content.status == 400 && data_type == 1){
+			snprintf(response_information.buf, snprintf_len + 1,"HTTP/1.0 400 Bad Request\r\nContent-Type: %s\r\nContent-Length: %lu\r\nDate: %s\r\nServer: nginY\r\n\r\n%s",response_content.content_type,response_content.content_length,current_time,response_content.content_body);
+		}
+	}
 	return response_information;
 }
 

@@ -5,6 +5,7 @@ typedef struct resp_t{
 	uint64_t content_length;
 	char content_type[129];
 	char *content_body;
+	int encoding; //0 - no encoding, 5 - gzip, 4 - br, 3 - deflate, 2 - compress , 1 - zstd
 }resp_t;
 
 typedef union is_malformed_u {

@@ -5,6 +5,7 @@
 #include <assert.h>
 #include <sys/socket.h>
 #include <time.h>
+#include "extract.h"
 
 char *extract_file_name(char *path,char *buf);
 char *extract_host(char *headers);
@@ -73,43 +74,46 @@ char *extract_host(char *headers){
 	return NULL;
 }
 
-char **extract_encoding(char *headers){
-	char **encoding = malloc(sizeof(char *) * 6);
+encoding_t extract_encoding(char *headers){
+	encoding_t encoding = {.encoding_schemes = NULL , .available_schemes = 0};
 	char *current;
-	char tmp[strlen(headers)+1];
 	int i;
-	int val;
-	for(i=0;i<6;i++){
-		encoding[i] = malloc(sizeof(char) *20);
-	}
+	char tmp[strlen(headers)+1];
 	memcpy(tmp, headers, strlen(headers)+1);
 	current = strstr(tmp,"Accept-Encoding: ");
-	i = 0;
 	if(current != NULL){
+		i = 0;
+		encoding.encoding_schemes = malloc(sizeof(char *) * 6);
+		int val;
+		for(i=0;i<6;i++){
+			encoding.encoding_schemes[i] = malloc(sizeof(char) *20);
+		}
+		i = 0;
 		strtok(current, ":");
 		current = strtok(NULL, ",");
 		while(current != NULL){
 			if(current[0] == ' '){
 				current++;
 			}
-			strncpy(encoding[i], current,19);
+			strncpy(encoding.encoding_schemes[i], current,19);
 			current = strtok(NULL, ",");
+			encoding.available_schemes ++;
 			i++;
 		}
-		encoding = realloc(encoding,sizeof(char *) * i);
+		encoding.encoding_schemes = realloc(encoding.encoding_schemes,sizeof(char *) * i);
 		return encoding;
 	}
 	else{
-		return NULL;
+		return encoding;
 	}
 }
 
-void free_encoding(char **encoding){
+void free_encoding(encoding_t encode){
 	int i;
-	i = 0;
-	while(encoding[i] != NULL){
-		free(encoding[i]);
+	i = 6;
+	while(i < 6){
+		free(encode.encoding_schemes[i]);
 		i++;
 	}
-	free(encoding);
+	free(encode.encoding_schemes);
 }

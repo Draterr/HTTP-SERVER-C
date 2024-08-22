@@ -25,9 +25,10 @@
 //*                                    FUNCTION DEFINITION							    *
 //*******************************************************************************************************************
 char *get_arguments(int argc, char **argv);
+int encoding_scheme(encoding_t encoding_struct);
 void remove_newline(char *word, int last_position);
 char *add_base_path(char *file_name);
-void free_mem_close_sock(char *path, char *header,char *reply, int socket,char **encoding);
+void free_mem_close_sock(char *path, char *header,char *reply, int socket);
 
 #define min(a, b) ({ \
     typeof(a) _a = (a); \
@@ -162,14 +163,21 @@ int main(int argc, char** argv){
 			}
 			char request[2048];
 			char *pstrtok;
-			char **encoding;
+			encoding_t encoding;	
 			char *ptok;
 			char *path;
 			char version[10] = {0};
 			char tmp_request[strlen(header)+1];
 			char *host;
+			int chosen_encoding_scheme = 0 ;
 			if(strlen(header) != 0){
 				memcpy(tmp_request, header, strlen(header)+1);
+				if(strstr(tmp_request,"Accept-Encoding: ") == NULL){
+					printf("no encoding\n");
+				}
+				else{
+					encoding = extract_encoding(header);
+				}
 				path = malloc(2048);
 				memset(path, 0, 2048);
 				pstrtok = strtok(tmp_request, "\r\n");
@@ -181,7 +189,6 @@ int main(int argc, char** argv){
 				ptok = strtok(NULL, "\r\n");
 				strncpy(version, ptok,sizeof(method));
 				host = extract_host(header);
-				encoding = extract_encoding(header);
 			}
 			char cwd[4096] = {0};
 			if(getcwd(current_dir, sizeof(current_dir)) == NULL){
@@ -206,13 +213,16 @@ int main(int argc, char** argv){
 			printf("Whole Request: %s\n",request);
 			printf("Request_Path: %s\n",path);
 			printf("HTTP_Version: %s\n",version);
+			if(encoding.available_schemes > 0){
+				chosen_encoding_scheme = encoding_scheme(encoding);
+			}
 			char user_agent[1024] = {0};
 			char file_name[1024] = {0};
 			char echo_string[1024] = {0};
 			bool echo = false;
-			resp_t four_o_four = {.status = 404, .content_length = 0, .content_type = {0}, .content_body = NULL};
-			resp_t two_hundred = {.status = 200, .content_length = 0, .content_type = {0}, .content_body = NULL};
-			resp_t four_hundred = {.status = 400, .content_length = 0, .content_type = {0}, .content_body = NULL};
+			resp_t four_o_four = {.status = 404, .content_length = 0, .content_type = {0}, .content_body = NULL, .encoding = 0};
+			resp_t two_hundred = {.status = 200, .content_length = 0, .content_type = {0}, .content_body = NULL, .encoding = 0};
+			resp_t four_hundred = {.status = 400, .content_length = 0, .content_type = {0}, .content_body = NULL, .encoding = 0};
 			is_malformed_s malformed; 
 			resp_info response = {0};
 			response.buf = malloc(1024);
@@ -227,6 +237,12 @@ int main(int argc, char** argv){
 					perror("fopen 400");
 					continue;
 				}
+				if(encoding.available_schemes > 0 ){
+					four_hundred.encoding = chosen_encoding_scheme;
+				}
+				else{
+					four_hundred.encoding = 0;
+				}
 				four_hundred.content_body = read_from_file(fptr);
 				four_hundred.content_length = strlen(four_hundred.content_body);
 				strncpy(four_hundred.content_type, "text/html", 129);
@@ -239,7 +255,10 @@ int main(int argc, char** argv){
 				}
 				free(four_hundred.content_body);
 				fclose(fptr);
-				free_mem_close_sock(path, header, response.buf, accept_client,encoding);
+				if(encoding.available_schemes != 0){
+					free_encoding(encoding);
+				}
+				free_mem_close_sock(path, header, response.buf, accept_client);
 				continue;
 			}else if(malformed.uniontype == 1){
 				strncpy(file_name,malformed.inner_union.file_name,sizeof(file_name));
@@ -247,55 +266,94 @@ int main(int argc, char** argv){
 			}
 			if(strcmp(request, "GET") == 0){
 					int can_access = access(cwd, F_OK);
-					if(can_access == 0 && encoding == NULL){
+					if(can_access == 0){
 							FILE *fptr = fopen(cwd, "r");					
 							if(fptr == NULL){
 								perror("fopen");
 								}
-							two_hundred.content_body = read_from_file(fptr);
-							two_hundred.content_length = strlen(two_hundred.content_body);
-							strncpy(four_hundred.content_type, "application/octet-stream", 129);
-							response.buf = realloc(response.buf, strlen(two_hundred.content_body) + 2048);
-							response = construct_response(response, two_hundred,0);
-							printf("read_from_file: %s\n",response.buf);
-							int send_client = send(accept_client,response.buf,strlen(response.buf),0);
-							if(send_client == -1){
-								perror("send");
-								exit(-1);
+							int compress_size = 0;
+							if(encoding.available_schemes > 0 ){
+								two_hundred.encoding = chosen_encoding_scheme;
+								two_hundred.content_body = read_from_file(fptr);
+								char compressed_output[1024];
+								compress_size = gzip_compress(two_hundred.content_body, strlen(two_hundred.content_body), compressed_output, 1024);
+								two_hundred.content_length = compress_size;
+								memcpy(two_hundred.content_body, compressed_output, compress_size);
+								strncpy(two_hundred.content_type, "text/html", 129);
+								response.buf = realloc(response.buf, compress_size + 2048);
+								response = construct_response(response, two_hundred,1);
+								printf("%u\n",response.header_len);
+								int send_client = send(accept_client,response.buf,compress_size+response.header_len,0);
+								if(send_client == -1){
+									perror("send");
+									exit(-1);
+								}
 							}
+							else{
+								two_hundred.encoding = 0;
+								two_hundred.content_body = read_from_file(fptr);
+								two_hundred.content_length = strlen(two_hundred.content_body);
+								strncpy(two_hundred.content_type, "application/octet-stream", 129);
+								response.buf = realloc(response.buf, strlen(two_hundred.content_body) + 2048);
+								response = construct_response(response, two_hundred,0);
+								int send_client = send(accept_client,response.buf,strlen(response.buf),0);
+								if(send_client == -1){
+									perror("send");
+									exit(-1);
+								}
+							}
+						printf("read_from_file: %s\n",response.buf);
 						fclose(fptr);
 						free(two_hundred.content_body);
-						free_mem_close_sock(path, header, response.buf, accept_client,encoding);
+						if(encoding.available_schemes != 0){
+							free_encoding(encoding);
+						}
+						free_mem_close_sock(path, header, response.buf, accept_client);
 						continue;
 					}
-					else if(can_access != 0 && encoding == NULL){
+					// else if(can_access != 0){
+					// 	add_base_path(not_found_name);
+					// 	FILE *not_found = fopen(response_file_path, "r");
+					// 	if(!not_found){
+					// 		perror("fopen response file");
+					// 		printf("Failed to open the response at %s\n",response_file_path);
+					// 	}
+					// 	if(encoding.available_schemes > 0 ){
+					// 		four_o_four.encoding = chosen_encoding_scheme;
+					// 	}
+					// 	else{
+					// 		four_o_four.encoding = 0;
+					// 	}
+					// 	four_o_four.content_body = read_from_file(not_found);
+					// 	four_o_four.content_length = strlen(four_o_four.content_body);
+					// 	strncpy(four_o_four.content_type, "text/html", 129);
+					// 	response.buf = realloc(response.buf, strlen(four_o_four.content_body) + 2048);
+					// 	construct_response(response, four_o_four,0);
+					// 	int send_client = send(accept_client,response.buf,strlen(response.buf),0);
+					// 	if(send_client == -1){
+					// 		perror("send");
+					// 		exit(-1);
+					// 	}
+					// 	if(encoding.available_schemes != 0){
+					// 		free_encoding(encoding);
+					// 	}
+					// 	free_mem_close_sock(path, header, response.buf, accept_client);
+					// 	free(four_o_four.content_body);
+					// 	fclose(not_found);
+					// 	continue;
+					// }
+					else if (can_access != 0){
 						add_base_path(not_found_name);
 						FILE *not_found = fopen(response_file_path, "r");
 						if(!not_found){
 							perror("fopen response file");
 							printf("Failed to open the response at %s\n",response_file_path);
 						}
-						four_o_four.content_body = read_from_file(not_found);
-						four_o_four.content_length = strlen(four_o_four.content_body);
-						strncpy(four_o_four.content_type, "text/html", 129);
-						response.buf = realloc(response.buf, strlen(four_o_four.content_body) + 2048);
-						construct_response(response, four_o_four,0);
-						int send_client = send(accept_client,response.buf,strlen(response.buf),0);
-						if(send_client == -1){
-							perror("send");
-							exit(-1);
+						if(encoding.available_schemes > 0 ){
+							four_o_four.encoding = chosen_encoding_scheme;
 						}
-						free_mem_close_sock(path, header, response.buf, accept_client,encoding);
-						free(four_o_four.content_body);
-						fclose(not_found);
-						continue;
-					}
-					else if (can_access != 0 && encoding != NULL){
-						add_base_path(not_found_name);
-						FILE *not_found = fopen(response_file_path, "r");
-						if(!not_found){
-							perror("fopen response file");
-							printf("Failed to open the response at %s\n",response_file_path);
+						else{
+							four_o_four.encoding = 0;
 						}
 						four_o_four.content_body = read_from_file(not_found);
 						char compressed_output[1024];
@@ -306,13 +364,17 @@ int main(int argc, char** argv){
 						strncpy(four_o_four.content_type, "text/html", strlen("text/html"));
 						response.buf = realloc(response.buf, compress_size + 2048);
 						response = construct_response(response, four_o_four,1);
-						printf("idkmanplswork: %u\n",response.header_len);
-						int send_client = send(accept_client,response.buf,compress_size + response.header_len,0);
+						printf("compress %d\n",compress_size);
+						printf("header %d\n",response.header_len);
+						int send_client = send(accept_client,response.buf, compress_size + response.header_len,0);
 						if(send_client == -1){
 							perror("send");
 							exit(-1);
 						}
-						free_mem_close_sock(path, header, response.buf, accept_client,encoding);
+						if(encoding.available_schemes != 0){
+							free_encoding(encoding);
+						}
+						free_mem_close_sock(path, header, response.buf, accept_client);
 						fclose(not_found);
 						continue;
 					}
@@ -320,7 +382,7 @@ int main(int argc, char** argv){
 			else if(strcmp(request, "POST") == 0) {
 				strncat(cwd,file_name,strlen(file_name));
 			}
-			free_mem_close_sock(path, header, response.buf, accept_client,encoding);
+			free_mem_close_sock(path, header, response.buf, accept_client);
 			continue;
 			}
 	}
@@ -399,9 +461,39 @@ char *add_base_path(char *file_name){
 	strncat(response_file_path, file_name, strlen(file_name));
 	return response_file_path;
 }
+int encoding_scheme(encoding_t encoding_struct){
+	//priority: 1 - gzip, 2 - br, 3 - deflate, 4 - compress, 5 - zstd
+	int supported_scheme[5] = {0};
+	int max = 0;
+	int i = 0;
+	int j = 0;
+	for(;i < encoding_struct.available_schemes; i++){
+		if(strncmp(encoding_struct.encoding_schemes[i],"gzip",4) == 0){
+			supported_scheme[i] = 5;
+		}
+		else if(strncmp(encoding_struct.encoding_schemes[i],"br",2) == 0){
+			supported_scheme[i] = 4;
+		}
+		else if(strncmp(encoding_struct.encoding_schemes[i],"deflate",7) == 0){
+			supported_scheme[i] = 3;
+		}
+		else if(strncmp(encoding_struct.encoding_schemes[i],"compress",8) == 0){
+			supported_scheme[i] = 2;
+		}
+		else if(strncmp(encoding_struct.encoding_schemes[i],"zstd",4) == 0){
+			supported_scheme[i] = 1;
+		}
+	}
+	for(;j < 5;j++){
+		if(supported_scheme[j] > max){
+			max = supported_scheme[j];
+		}
+	}
+	return max;
 
-void free_mem_close_sock(char *path, char *header, char *reply, int socket,char **encoding){
-	free_encoding(encoding);
+}
+
+void free_mem_close_sock(char *path, char *header, char *reply, int socket){
 	free(path);
 	free(header);
 	free(reply);
