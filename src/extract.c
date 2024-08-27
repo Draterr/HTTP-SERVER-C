@@ -11,6 +11,8 @@ char *extract_file_name(char *path,char *buf);
 char *extract_host(char *headers);
 bool end_of_header(char *buf);
 bool valid_method(char *method);
+encoding_t extract_encoding(char *headers);
+void free_encoding(encoding_t encode);
 
 
 bool end_of_header(char *buf){

@@ -163,7 +163,7 @@ int main(int argc, char** argv){
 			}
 			char request[2048];
 			char *pstrtok;
-			encoding_t encoding;	
+			encoding_t encoding = {0};	
 			char *ptok;
 			char *path;
 			char version[10] = {0};
@@ -209,6 +209,9 @@ int main(int argc, char** argv){
 			if(cwd[strlen(cwd)-1] != '/'){
 				strcat(cwd, "/");
 			}
+			if(strlen(path) == 1 && strcmp(path,"/") == 0){
+				strcat(path, "index.html");
+			}
 
 			printf("Whole Request: %s\n",request);
 			printf("Request_Path: %s\n",path);
@@ -225,7 +228,11 @@ int main(int argc, char** argv){
 			resp_t four_hundred = {.status = 400, .content_length = 0, .content_type = {0}, .content_body = NULL, .encoding = 0};
 			is_malformed_s malformed; 
 			resp_info response = {0};
+			uint response_buf_size = 1024;
 			response.buf = malloc(1024);
+			if(response.buf == NULL){
+				perror("malloc");
+			}
 			memset(response.buf, 0, 1024);
 			response.header_len = 0;
 
@@ -239,25 +246,46 @@ int main(int argc, char** argv){
 				}
 				if(encoding.available_schemes > 0 ){
 					four_hundred.encoding = chosen_encoding_scheme;
+					four_hundred.content_body = read_from_file(fptr);
+					char compressed_output[1024];
+					int compress_size = gzip_compress(four_hundred.content_body, strlen(four_hundred.content_body),compressed_output , 1024);
+					four_hundred.content_length = compress_size;
+					memcpy(four_hundred.content_body, compressed_output, compress_size);
+					strncpy(four_hundred.content_type, "text/html", 129);
+					response = construct_response(response, four_hundred,1,response_buf_size);
+					response.buf = realloc(response.buf, compress_size + response.header_len);
+					if(response.buf == NULL){
+						perror("realloc");
+					}
+					printf("%d\n",response.header_len+compress_size);
+					int send_client = send(accept_client,response.buf,compress_size + response.header_len,0);
+					if(send_client == -1){
+						perror("send");
+						exit(-1);
+					}
 				}
 				else{
 					four_hundred.encoding = 0;
-				}
-				four_hundred.content_body = read_from_file(fptr);
-				four_hundred.content_length = strlen(four_hundred.content_body);
-				strncpy(four_hundred.content_type, "text/html", 129);
-				response.buf = realloc(response.buf, strlen(four_hundred.content_body) + 2048);
-				response = construct_response(response, four_hundred,0);
-				int send_client = send(accept_client,response.buf,strlen(response.buf),0);
-				if(send_client == -1){
-					perror("send");
-					exit(-1);
+					four_hundred.content_body = read_from_file(fptr);
+					four_hundred.content_length = strlen(four_hundred.content_body);
+					strncpy(four_hundred.content_type, "text/html", 129);
+					response.buf = realloc(response.buf, strlen(four_hundred.content_body) + 2048);
+					if(response.buf == NULL){
+						perror("realloc");
+					}
+					response = construct_response(response, four_hundred,0,response_buf_size);
+					int send_client = send(accept_client,response.buf,strlen(response.buf),0);
+					if(send_client == -1){
+						perror("send");
+						exit(-1);
+					}
 				}
 				free(four_hundred.content_body);
 				fclose(fptr);
 				if(encoding.available_schemes != 0){
 					free_encoding(encoding);
 				}
+				cnt--;
 				free_mem_close_sock(path, header, response.buf, accept_client);
 				continue;
 			}else if(malformed.uniontype == 1){
@@ -280,8 +308,7 @@ int main(int argc, char** argv){
 								two_hundred.content_length = compress_size;
 								memcpy(two_hundred.content_body, compressed_output, compress_size);
 								strncpy(two_hundred.content_type, "text/html", 129);
-								response.buf = realloc(response.buf, compress_size + 2048);
-								response = construct_response(response, two_hundred,1);
+								response = construct_response(response, two_hundred,1,response_buf_size);
 								printf("%u\n",response.header_len);
 								int send_client = send(accept_client,response.buf,compress_size+response.header_len,0);
 								if(send_client == -1){
@@ -293,10 +320,9 @@ int main(int argc, char** argv){
 								two_hundred.encoding = 0;
 								two_hundred.content_body = read_from_file(fptr);
 								two_hundred.content_length = strlen(two_hundred.content_body);
-								strncpy(two_hundred.content_type, "application/octet-stream", 129);
-								response.buf = realloc(response.buf, strlen(two_hundred.content_body) + 2048);
-								response = construct_response(response, two_hundred,0);
-								int send_client = send(accept_client,response.buf,strlen(response.buf),0);
+								strncpy(two_hundred.content_type, "text/html", 129);
+								response = construct_response(response, two_hundred,0,response_buf_size);
+								int send_client = send(accept_client,response.buf,two_hundred.content_length + response.header_len,0);
 								if(send_client == -1){
 									perror("send");
 									exit(-1);
@@ -308,40 +334,10 @@ int main(int argc, char** argv){
 						if(encoding.available_schemes != 0){
 							free_encoding(encoding);
 						}
+						cnt--;
 						free_mem_close_sock(path, header, response.buf, accept_client);
 						continue;
 					}
-					// else if(can_access != 0){
-					// 	add_base_path(not_found_name);
-					// 	FILE *not_found = fopen(response_file_path, "r");
-					// 	if(!not_found){
-					// 		perror("fopen response file");
-					// 		printf("Failed to open the response at %s\n",response_file_path);
-					// 	}
-					// 	if(encoding.available_schemes > 0 ){
-					// 		four_o_four.encoding = chosen_encoding_scheme;
-					// 	}
-					// 	else{
-					// 		four_o_four.encoding = 0;
-					// 	}
-					// 	four_o_four.content_body = read_from_file(not_found);
-					// 	four_o_four.content_length = strlen(four_o_four.content_body);
-					// 	strncpy(four_o_four.content_type, "text/html", 129);
-					// 	response.buf = realloc(response.buf, strlen(four_o_four.content_body) + 2048);
-					// 	construct_response(response, four_o_four,0);
-					// 	int send_client = send(accept_client,response.buf,strlen(response.buf),0);
-					// 	if(send_client == -1){
-					// 		perror("send");
-					// 		exit(-1);
-					// 	}
-					// 	if(encoding.available_schemes != 0){
-					// 		free_encoding(encoding);
-					// 	}
-					// 	free_mem_close_sock(path, header, response.buf, accept_client);
-					// 	free(four_o_four.content_body);
-					// 	fclose(not_found);
-					// 	continue;
-					// }
 					else if (can_access != 0){
 						add_base_path(not_found_name);
 						FILE *not_found = fopen(response_file_path, "r");
@@ -351,29 +347,37 @@ int main(int argc, char** argv){
 						}
 						if(encoding.available_schemes > 0 ){
 							four_o_four.encoding = chosen_encoding_scheme;
+							four_o_four.content_body = read_from_file(not_found);
+							char compressed_output[1024];
+							int compress_size = gzip_compress(four_o_four.content_body, strlen(four_o_four.content_body), compressed_output, 1024);
+							four_o_four.content_length = compress_size;
+							memcpy(four_o_four.content_body, compressed_output, compress_size);
+							strncpy(four_o_four.content_type, "text/html", strlen("text/html"));
+							response = construct_response(response, four_o_four,1,response_buf_size);
+							printf("compress %d\n",compress_size);
+							printf("header %d\n",response.header_len);
+							int send_client = send(accept_client,response.buf, compress_size + response.header_len,0);
+							if(send_client == -1){
+								perror("send");
+								exit(-1);
+							}
 						}
 						else{
 							four_o_four.encoding = 0;
-						}
-						four_o_four.content_body = read_from_file(not_found);
-						char compressed_output[1024];
-						char idk[1024];
-						int compress_size = gzip_compress(four_o_four.content_body, strlen(four_o_four.content_body), compressed_output, 1024);
-						four_o_four.content_length = compress_size;
-						memcpy(four_o_four.content_body, compressed_output, compress_size);
-						strncpy(four_o_four.content_type, "text/html", strlen("text/html"));
-						response.buf = realloc(response.buf, compress_size + 2048);
-						response = construct_response(response, four_o_four,1);
-						printf("compress %d\n",compress_size);
-						printf("header %d\n",response.header_len);
-						int send_client = send(accept_client,response.buf, compress_size + response.header_len,0);
-						if(send_client == -1){
-							perror("send");
-							exit(-1);
+							four_o_four.content_body = read_from_file(not_found);
+							four_o_four.content_length = strlen(four_o_four.content_body);
+							strncpy(four_o_four.content_type, "text/html", 129);
+							response = construct_response(response, four_o_four,1,response_buf_size);
+							int send_client = send(accept_client,response.buf, four_o_four.content_length +  response.header_len,0);
+							if(send_client == -1){
+								perror("send");
+								exit(-1);
+							}
 						}
 						if(encoding.available_schemes != 0){
 							free_encoding(encoding);
 						}
+						cnt--;
 						free_mem_close_sock(path, header, response.buf, accept_client);
 						fclose(not_found);
 						continue;
@@ -382,6 +386,7 @@ int main(int argc, char** argv){
 			else if(strcmp(request, "POST") == 0) {
 				strncat(cwd,file_name,strlen(file_name));
 			}
+			cnt--;
 			free_mem_close_sock(path, header, response.buf, accept_client);
 			continue;
 			}

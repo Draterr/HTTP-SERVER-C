@@ -21,8 +21,9 @@ typedef struct is_malformed_s{
 typedef struct response_info{
 	char *buf;
 	unsigned int header_len;
+	unsigned int buf_size;
 }resp_info;
 
 
-extern resp_info construct_response(resp_info response_information, resp_t response_content,int data_type);
+extern resp_info construct_response(resp_info response_information, resp_t response_content,int data_type,unsigned int buffer_size);
 extern is_malformed_s is_malformed_request(char *path, char *method);

@@ -2,13 +2,12 @@
 - output file contents /
 - maybe use a union for is_malformed_request output /
 - 400 for malformed requests /
+- Compression (Gzip) /
 - HTTPS
-- Compression (Gzip)
 - HTTP/1.1 Keep-Alive
 - Post request
 
 # BUGS
-- / goes to 400 should go to index 
-- wrong header len
-- binary data is not right
+- not all the 400 cases are caught
+- fix valgrind errors
 - memory leak
