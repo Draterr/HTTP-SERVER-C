@@ -13,6 +13,7 @@ bool end_of_header(char *buf);
 bool valid_method(char *method);
 encoding_t extract_encoding(char *headers);
 void free_encoding(encoding_t encode);
+char *extract_extension(char *request_file);
 
 
 bool end_of_header(char *buf){
@@ -108,6 +109,16 @@ encoding_t extract_encoding(char *headers){
 	else{
 		return encoding;
 	}
+}
+
+char *extract_extension(char *request_file){
+	char *tmp = strtok(request_file,".");
+	char *extension;
+	while(tmp != NULL){ //Iterate over all the dots in the file name to find the last extension
+		extension = tmp; //set extension to the last one before tmp becomes a null pointer
+		tmp = strtok(NULL,"."); //this is tmp because strtok will end up with a null pointer after we iterate over all the possible "." delimiters 
+	}
+	return extension;
 }
 
 void free_encoding(encoding_t encode){

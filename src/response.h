@@ -24,6 +24,11 @@ typedef struct response_info{
 	unsigned int buf_size;
 }resp_info;
 
+typedef struct resposne_types{
+	int type;
+	char *content_type;
+} responese_type;
+
 
 extern resp_info construct_response(resp_info response_information, resp_t response_content,int data_type,unsigned int buffer_size);
 extern is_malformed_s is_malformed_request(char *path, char *method);

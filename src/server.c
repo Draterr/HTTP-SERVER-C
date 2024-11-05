@@ -221,6 +221,7 @@ int main(int argc, char** argv){
 			}
 			char user_agent[1024] = {0};
 			char file_name[1024] = {0};
+			char extension[255] = {0};
 			char echo_string[1024] = {0};
 			bool echo = false;
 			resp_t four_o_four = {.status = 404, .content_length = 0, .content_type = {0}, .content_body = NULL, .encoding = 0};
@@ -289,7 +290,8 @@ int main(int argc, char** argv){
 				free_mem_close_sock(path, header, response.buf, accept_client);
 				continue;
 			}else if(malformed.uniontype == 1){
-				strncpy(file_name,malformed.inner_union.file_name,sizeof(file_name));
+				strncpy(file_name,malformed.inner_union.file_name,1024);
+				strncpy(extension,extract_extension(file_name),255);
 				strncat(cwd,file_name,strlen(file_name));
 			}
 			if(strcmp(request, "GET") == 0){

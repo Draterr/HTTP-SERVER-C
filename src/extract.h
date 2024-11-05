@@ -12,4 +12,4 @@ extern char *extract_echo_string(char *path,char *buf);
 extern char *extract_file_name(char *path,char *buf);
 extern bool end_of_header(char *buf);
 extern bool valid_method(char *method);
-
+extern char *extract_extension(char *request_file);
