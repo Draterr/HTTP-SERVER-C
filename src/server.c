@@ -19,6 +19,7 @@
 #include "extract.h"
 #include "response.h"
 #include "compression/gzip.h"
+#include "mime.h"
 
 
 //*******************************************************************************************************************
@@ -47,6 +48,7 @@ int main(int argc, char** argv){
 	// 	exit(1);
 	// }
 	//
+	get_mime_type("./response/index.html");
 	char directory[4096];
 	char *optarg;
 	optarg = get_arguments(argc, argv);
