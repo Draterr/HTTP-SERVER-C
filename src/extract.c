@@ -104,6 +104,9 @@ encoding_t extract_encoding(char *headers){
 			i++;
 		}
 		encoding.encoding_schemes = realloc(encoding.encoding_schemes,sizeof(char *) * i);
+		if(encoding.encoding_schemes == NULL){
+			perror("realloc extract_encoding");
+		}
 		return encoding;
 	}
 	else{
@@ -113,7 +116,7 @@ encoding_t extract_encoding(char *headers){
 
 char *extract_extension(char *request_file){
 	char *tmp = strtok(request_file,".");
-	char *extension;
+	char *extension = NULL;
 	while(tmp != NULL){ //Iterate over all the dots in the file name to find the last extension
 		extension = tmp; //set extension to the last one before tmp becomes a null pointer
 		tmp = strtok(NULL,"."); //this is tmp because strtok will end up with a null pointer after we iterate over all the possible "." delimiters 

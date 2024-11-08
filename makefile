@@ -1,2 +1,2 @@
 server:
-	gcc -o bin/server $(shell find src/ -name "*.c") -lz -lmagic
+	gcc -o bin/server $(shell find src/ -name "*.c") -lz 

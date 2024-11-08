@@ -53,6 +53,9 @@ char *read_from_file(FILE *fptr){
 		if(curr_malloc_size < max_mem){
 			if(curr_mem >= curr_malloc_size){
 				buf = realloc(buf, curr_malloc_size * 2);
+				if(buf == NULL){
+					perror("realloc read_from_file");
+				}
 				curr_malloc_size = curr_malloc_size *2;
 			}
 		}
@@ -62,7 +65,9 @@ char *read_from_file(FILE *fptr){
 		}
 	}
 	buf = realloc(buf, positon + 1);
-	fseek(fptr, 0, SEEK_SET);
+	if(buf == NULL){
+		perror("realloc read_from_file");
+	}
 	remove_newline(buf,positon);
 	return buf;
 }

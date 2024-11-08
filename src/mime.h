@@ -1,4 +1,4 @@
 #include <stdio.h>
-#include <magic.h>
 
-void get_mime_type(const char *file_name);
+char *get_mime_type(const char *file_extension);
+char *open_mime_type_file();

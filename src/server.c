@@ -29,7 +29,7 @@ char *get_arguments(int argc, char **argv);
 int encoding_scheme(encoding_t encoding_struct);
 void remove_newline(char *word, int last_position);
 char *add_base_path(char *file_name);
-void free_mem_close_sock(char *path, char *header,char *reply, int socket);
+void free_mem_close_sock(char *path, char *header, char *reply, int socket,char *mime_type);
 
 #define min(a, b) ({ \
     typeof(a) _a = (a); \
@@ -43,12 +43,11 @@ char bad_request_name[] = {"/response/400.html"};
 char response_file_path[4096] = {0};
 char current_dir[4096] = {0};
 int main(int argc, char** argv){
-	// if(argc < 3){
-	// 	printf("Usage: ./clone IP PORT\n");
-	// 	exit(1);
-	// }
-	//
-	get_mime_type("./response/index.html");
+	if(argc < 3){
+		printf("Usage: ./clone IP PORT\n");
+		exit(1);
+	}
+
 	char directory[4096];
 	char *optarg;
 	optarg = get_arguments(argc, argv);
@@ -84,8 +83,8 @@ int main(int argc, char** argv){
 
 	//populate addrinfo "ip,port,protocol,etc"
 
-	// int getinfo = getaddrinfo(argv[1],argv[2],&hints,&servinfo);
-	int getinfo = getaddrinfo("127.0.0.1","4221",&hints,&servinfo);
+	int getinfo = getaddrinfo(argv[1],argv[2],&hints,&servinfo);
+	// int getinfo = getaddrinfo("127.0.0.1","4221",&hints,&servinfo);
 	if(getinfo != 0){
 		fprintf(stderr,"getaddrinfo error: %s\n", gai_strerror(getinfo));
 		exit(-1);
@@ -247,6 +246,7 @@ int main(int argc, char** argv){
 					perror("fopen 400");
 					continue;
 				}
+				printf("Responded with 400\n");
 				if(encoding.available_schemes > 0 ){
 					four_hundred.encoding = chosen_encoding_scheme;
 					four_hundred.content_body = read_from_file(fptr);
@@ -289,11 +289,12 @@ int main(int argc, char** argv){
 					free_encoding(encoding);
 				}
 				cnt--;
-				free_mem_close_sock(path, header, response.buf, accept_client);
+				free_mem_close_sock(path, header, response.buf, accept_client,NULL);
 				continue;
 			}else if(malformed.uniontype == 1){
 				strncpy(file_name,malformed.inner_union.file_name,1024);
-				strncpy(extension,extract_extension(file_name),255);
+				strncpy(extension,file_name,255);
+				strncpy(extension,extract_extension(extension),255);
 				strncat(cwd,file_name,strlen(file_name));
 			}
 			if(strcmp(request, "GET") == 0){
@@ -304,14 +305,26 @@ int main(int argc, char** argv){
 								perror("fopen");
 								}
 							int compress_size = 0;
+							printf("Responded with 200\n");
+							char *mime_type = get_mime_type(extension);
+							printf("mime_type:%s\n",mime_type);
 							if(encoding.available_schemes > 0 ){
+								char *extension;
 								two_hundred.encoding = chosen_encoding_scheme;
 								two_hundred.content_body = read_from_file(fptr);
+								if(two_hundred.content_body == NULL){
+									perror("Error read_from_file");
+								}
 								char compressed_output[1024];
 								compress_size = gzip_compress(two_hundred.content_body, strlen(two_hundred.content_body), compressed_output, 1024);
 								two_hundred.content_length = compress_size;
 								memcpy(two_hundred.content_body, compressed_output, compress_size);
-								strncpy(two_hundred.content_type, "text/html", 129);
+								extension = extract_extension(file_name);
+								printf("%s\n",extension);
+								if(extension == NULL){
+									perror("Error extracting extension");
+								}
+								strncpy(two_hundred.content_type, mime_type, 129);
 								response = construct_response(response, two_hundred,1,response_buf_size);
 								printf("%u\n",response.header_len);
 								int send_client = send(accept_client,response.buf,compress_size+response.header_len,0);
@@ -324,7 +337,7 @@ int main(int argc, char** argv){
 								two_hundred.encoding = 0;
 								two_hundred.content_body = read_from_file(fptr);
 								two_hundred.content_length = strlen(two_hundred.content_body);
-								strncpy(two_hundred.content_type, "text/html", 129);
+								strncpy(two_hundred.content_type, mime_type, 129);
 								response = construct_response(response, two_hundred,0,response_buf_size);
 								int send_client = send(accept_client,response.buf,two_hundred.content_length + response.header_len,0);
 								if(send_client == -1){
@@ -339,7 +352,7 @@ int main(int argc, char** argv){
 							free_encoding(encoding);
 						}
 						cnt--;
-						free_mem_close_sock(path, header, response.buf, accept_client);
+						free_mem_close_sock(path, header, response.buf, accept_client,mime_type);
 						continue;
 					}
 					else if (can_access != 0){
@@ -349,6 +362,7 @@ int main(int argc, char** argv){
 							perror("fopen response file");
 							printf("Failed to open the response at %s\n",response_file_path);
 						}
+						printf("Responded with 404\n");
 						if(encoding.available_schemes > 0 ){
 							four_o_four.encoding = chosen_encoding_scheme;
 							four_o_four.content_body = read_from_file(not_found);
@@ -382,7 +396,7 @@ int main(int argc, char** argv){
 							free_encoding(encoding);
 						}
 						cnt--;
-						free_mem_close_sock(path, header, response.buf, accept_client);
+						free_mem_close_sock(path, header, response.buf, accept_client,NULL);
 						fclose(not_found);
 						continue;
 					}
@@ -391,7 +405,7 @@ int main(int argc, char** argv){
 				strncat(cwd,file_name,strlen(file_name));
 			}
 			cnt--;
-			free_mem_close_sock(path, header, response.buf, accept_client);
+			free_mem_close_sock(path, header, response.buf, accept_client,NULL);
 			continue;
 			}
 	}
@@ -502,9 +516,10 @@ int encoding_scheme(encoding_t encoding_struct){
 
 }
 
-void free_mem_close_sock(char *path, char *header, char *reply, int socket){
+void free_mem_close_sock(char *path, char *header, char *reply, int socket,char *mime_type){
 	free(path);
 	free(header);
 	free(reply);
 	close(socket);
+	free(mime_type);
 }

@@ -10,6 +10,7 @@
 
 
 resp_info construct_response(resp_info response_information,resp_t response_content,int data_type,uint buffer_size){//data_type = 1 means compressed data, 0 means regular data
+	printf("%s\n",response_content.content_type);
 	time_t time_struct = time(NULL);
 	char *current_time;
 	if(time_struct){
@@ -42,7 +43,7 @@ resp_info construct_response(resp_info response_information,resp_t response_cont
 		buffer_size = response_content.content_length + response_information.header_len;
 		response_information.buf = realloc(response_information.buf,buffer_size);
 		if(response_information.buf == NULL){
-			perror("realloc");
+			perror("construct_response realloc");
 		}
 	}
 	response_information.buf_size = buffer_size;
