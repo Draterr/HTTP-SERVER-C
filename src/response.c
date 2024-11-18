@@ -38,7 +38,6 @@ resp_info construct_response(resp_info response_information,resp_t response_cont
 	if(data_type == 1){snprintf_len += strlen("Content-Encoding: gzip\r\n");}
 	response_information.header_len = snprintf_len;
 	if(response_content.content_body != NULL && data_type == 0){snprintf_len += response_content.content_length;}
-
 	if(response_information.header_len + response_content.content_length > buffer_size){
 		buffer_size = response_content.content_length + response_information.header_len;
 		response_information.buf = realloc(response_information.buf,buffer_size);
@@ -63,6 +62,7 @@ resp_info construct_response(resp_info response_information,resp_t response_cont
 	else{
 		if(response_content.status == 200 && data_type == 1){
 			snprintf(response_information.buf, snprintf_len + 1,"HTTP/1.0 200 OK\r\nContent-Type: %s\r\nContent-Length: %lu\r\nDate: %s\r\nServer: nginY\r\nContent-Encoding: gzip\r\n\r\n",response_content.content_type,response_content.content_length,current_time);
+			printf("%lu\n",response_content.content_length);
 			memcpy(&response_information.buf[snprintf_len], response_content.content_body, response_content.content_length);
 		}
 		if(response_content.status == 404 && data_type == 1){

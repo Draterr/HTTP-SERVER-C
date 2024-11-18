@@ -20,6 +20,7 @@
 #include "response.h"
 #include "compression/gzip.h"
 #include "mime.h"
+#include <assert.h>
 
 
 //*******************************************************************************************************************
@@ -232,6 +233,7 @@ int main(int argc, char** argv){
 			resp_info response = {0};
 			uint response_buf_size = 1024;
 			response.buf = malloc(1024);
+			content_prop *file_content_prop;
 			if(response.buf == NULL){
 				perror("malloc");
 			}
@@ -241,7 +243,7 @@ int main(int argc, char** argv){
 			malformed = is_malformed_request(path,method);
 			if(malformed.uniontype == 0){
 				add_base_path(bad_request_name);
-				FILE *fptr = fopen(response_file_path, "r");
+				FILE *fptr = fopen(response_file_path, "rb");
 				if(!fptr){
 					perror("fopen 400");
 					continue;
@@ -249,9 +251,11 @@ int main(int argc, char** argv){
 				printf("Responded with 400\n");
 				if(encoding.available_schemes > 0 ){
 					four_hundred.encoding = chosen_encoding_scheme;
-					four_hundred.content_body = read_from_file(fptr);
-					char compressed_output[1024];
-					int compress_size = gzip_compress(four_hundred.content_body, strlen(four_hundred.content_body),compressed_output , 1024);
+					file_content_prop = read_from_file(fptr);
+					char *compressed_output = malloc(file_content_prop->file_size*sizeof(char));
+					four_hundred.content_body = file_content_prop->file_contents;
+					int compress_size = gzip_compress(four_hundred.content_body, file_content_prop->file_size,compressed_output , file_content_prop->file_size);
+					assert(compress_size!=-1);
 					four_hundred.content_length = compress_size;
 					memcpy(four_hundred.content_body, compressed_output, compress_size);
 					strncpy(four_hundred.content_type, "text/html", 129);
@@ -262,6 +266,9 @@ int main(int argc, char** argv){
 					}
 					printf("%d\n",response.header_len+compress_size);
 					int send_client = send(accept_client,response.buf,compress_size + response.header_len,0);
+					free(compressed_output);
+					free(file_content_prop->file_contents);
+					free(file_content_prop);
 					if(send_client == -1){
 						perror("send");
 						exit(-1);
@@ -269,8 +276,9 @@ int main(int argc, char** argv){
 				}
 				else{
 					four_hundred.encoding = 0;
-					four_hundred.content_body = read_from_file(fptr);
-					four_hundred.content_length = strlen(four_hundred.content_body);
+					file_content_prop = read_from_file(fptr);
+					four_hundred.content_body = file_content_prop->file_contents;
+					four_hundred.content_length = file_content_prop->file_size;
 					strncpy(four_hundred.content_type, "text/html", 129);
 					response.buf = realloc(response.buf, strlen(four_hundred.content_body) + 2048);
 					if(response.buf == NULL){
@@ -278,12 +286,13 @@ int main(int argc, char** argv){
 					}
 					response = construct_response(response, four_hundred,0,response_buf_size);
 					int send_client = send(accept_client,response.buf,strlen(response.buf),0);
+					free(file_content_prop->file_contents);
+					free(file_content_prop);
 					if(send_client == -1){
 						perror("send");
 						exit(-1);
 					}
 				}
-				free(four_hundred.content_body);
 				fclose(fptr);
 				if(encoding.available_schemes != 0){
 					free_encoding(encoding);
@@ -300,7 +309,7 @@ int main(int argc, char** argv){
 			if(strcmp(request, "GET") == 0){
 					int can_access = access(cwd, F_OK);
 					if(can_access == 0){
-							FILE *fptr = fopen(cwd, "r");					
+							FILE *fptr = fopen(cwd, "rb");					
 							if(fptr == NULL){
 								perror("fopen");
 								}
@@ -311,14 +320,19 @@ int main(int argc, char** argv){
 							if(encoding.available_schemes > 0 ){
 								char *extension;
 								two_hundred.encoding = chosen_encoding_scheme;
-								two_hundred.content_body = read_from_file(fptr);
+								file_content_prop = read_from_file(fptr);
+								two_hundred.content_body = file_content_prop->file_contents;
 								if(two_hundred.content_body == NULL){
 									perror("Error read_from_file");
 								}
-								char compressed_output[1024];
-								compress_size = gzip_compress(two_hundred.content_body, strlen(two_hundred.content_body), compressed_output, 1024);
+								char *compressed_output = malloc(file_content_prop->file_size * sizeof(char)+40);
+								compress_size = gzip_compress(two_hundred.content_body, file_content_prop->file_size, compressed_output, file_content_prop->file_size+40);
+								assert(compress_size!=-1);
 								two_hundred.content_length = compress_size;
-								memcpy(two_hundred.content_body, compressed_output, compress_size);
+						//something is wrong here :/
+								if(two_hundred.content_length != -1){
+									memcpy(file_content_prop->file_contents, compressed_output, compress_size);
+								}
 								extension = extract_extension(file_name);
 								printf("%s\n",extension);
 								if(extension == NULL){
@@ -332,14 +346,20 @@ int main(int argc, char** argv){
 									perror("send");
 									exit(-1);
 								}
+							free(compressed_output);
+							free(file_content_prop->file_contents);
+							free(file_content_prop);
 							}
 							else{
 								two_hundred.encoding = 0;
-								two_hundred.content_body = read_from_file(fptr);
-								two_hundred.content_length = strlen(two_hundred.content_body);
+								file_content_prop = read_from_file(fptr);
+								two_hundred.content_body = file_content_prop->file_contents;
+								two_hundred.content_length = file_content_prop->file_size;
 								strncpy(two_hundred.content_type, mime_type, 129);
 								response = construct_response(response, two_hundred,0,response_buf_size);
 								int send_client = send(accept_client,response.buf,two_hundred.content_length + response.header_len,0);
+								free(file_content_prop->file_contents);
+								free(file_content_prop);
 								if(send_client == -1){
 									perror("send");
 									exit(-1);
@@ -347,7 +367,6 @@ int main(int argc, char** argv){
 							}
 						printf("read_from_file: %s\n",response.buf);
 						fclose(fptr);
-						free(two_hundred.content_body);
 						if(encoding.available_schemes != 0){
 							free_encoding(encoding);
 						}
@@ -357,7 +376,7 @@ int main(int argc, char** argv){
 					}
 					else if (can_access != 0){
 						add_base_path(not_found_name);
-						FILE *not_found = fopen(response_file_path, "r");
+						FILE *not_found = fopen(response_file_path, "rb");
 						if(!not_found){
 							perror("fopen response file");
 							printf("Failed to open the response at %s\n",response_file_path);
@@ -365,9 +384,11 @@ int main(int argc, char** argv){
 						printf("Responded with 404\n");
 						if(encoding.available_schemes > 0 ){
 							four_o_four.encoding = chosen_encoding_scheme;
-							four_o_four.content_body = read_from_file(not_found);
-							char compressed_output[1024];
-							int compress_size = gzip_compress(four_o_four.content_body, strlen(four_o_four.content_body), compressed_output, 1024);
+							file_content_prop = read_from_file(not_found);
+							four_o_four.content_body =  file_content_prop->file_contents;
+							char *compressed_output = malloc(file_content_prop->file_size * sizeof(char));
+							int compress_size = gzip_compress(four_o_four.content_body, file_content_prop->file_size, compressed_output, file_content_prop->file_size);
+							assert(compress_size!=-1);
 							four_o_four.content_length = compress_size;
 							memcpy(four_o_four.content_body, compressed_output, compress_size);
 							strncpy(four_o_four.content_type, "text/html", strlen("text/html"));
@@ -375,6 +396,9 @@ int main(int argc, char** argv){
 							printf("compress %d\n",compress_size);
 							printf("header %d\n",response.header_len);
 							int send_client = send(accept_client,response.buf, compress_size + response.header_len,0);
+							free(compressed_output);
+							free(file_content_prop->file_contents);
+							free(file_content_prop);
 							if(send_client == -1){
 								perror("send");
 								exit(-1);
@@ -382,11 +406,14 @@ int main(int argc, char** argv){
 						}
 						else{
 							four_o_four.encoding = 0;
-							four_o_four.content_body = read_from_file(not_found);
-							four_o_four.content_length = strlen(four_o_four.content_body);
+							file_content_prop = read_from_file(not_found);
+							four_o_four.content_body =  file_content_prop->file_contents;
+							four_o_four.content_length = file_content_prop->file_size;
 							strncpy(four_o_four.content_type, "text/html", 129);
 							response = construct_response(response, four_o_four,1,response_buf_size);
 							int send_client = send(accept_client,response.buf, four_o_four.content_length +  response.header_len,0);
+							free(file_content_prop->file_contents);
+							free(file_content_prop);
 							if(send_client == -1){
 								perror("send");
 								exit(-1);
