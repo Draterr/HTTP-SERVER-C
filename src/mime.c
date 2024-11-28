@@ -9,14 +9,14 @@ char *open_mime_type_file()
 {
 	FILE *mime_type_file = fopen("/etc/mime.types","r");
 	long size;
-	char *file_content;
-	char tmp_buffer[1024];
+	char *file_content = NULL;
+	char tmp_buffer[1024] = {0};
 	uint mem_size = 1048576;
 	uint mem_used = 0;
 	uint MAX = 1677216;
 	uint mem_left = mem_size;
 
-	file_content = malloc(mem_size);
+	file_content = calloc(mem_size+1,sizeof(char));
 	if(file_content == NULL){
 		perror("malloc");
 	}

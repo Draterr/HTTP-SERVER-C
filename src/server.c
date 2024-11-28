@@ -45,7 +45,7 @@ char response_file_path[4096] = {0};
 char current_dir[4096] = {0};
 int main(int argc, char** argv){
 	if(argc < 3){
-		printf("Usage: ./clone IP PORT\n");
+		printf("Usage: ./server <IP> <PORT>\n");
 		exit(1);
 	}
 
@@ -223,7 +223,7 @@ int main(int argc, char** argv){
 			}
 			char user_agent[1024] = {0};
 			char file_name[1024] = {0};
-			char extension[255] = {0};
+			char extension[1024] = {0};
 			char echo_string[1024] = {0};
 			bool echo = false;
 			resp_t four_o_four = {.status = 404, .content_length = 0, .content_type = {0}, .content_body = NULL, .encoding = 0};
@@ -302,8 +302,8 @@ int main(int argc, char** argv){
 				continue;
 			}else if(malformed.uniontype == 1){
 				strncpy(file_name,malformed.inner_union.file_name,1024);
-				strncpy(extension,file_name,255);
-				strncpy(extension,extract_extension(extension),255);
+				strncpy(extension,file_name,1024);
+				memmove(extension,extract_extension(extension),255);
 				strncat(cwd,file_name,strlen(file_name));
 			}
 			if(strcmp(request, "GET") == 0){

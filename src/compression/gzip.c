@@ -83,7 +83,7 @@ content_prop *read_from_file(FILE *fptr){
 	fseek(fptr,0,SEEK_END);
 	file_properties->file_size = ftell(fptr);
 	fseek(fptr,0,SEEK_SET);
-	file_properties->file_contents = malloc(file_properties->file_size * sizeof(char));
+	file_properties->file_contents = malloc(file_properties->file_size * sizeof(char)+40);
 	if(file_properties->file_contents == NULL)
 	{
 		perror("malloc");
